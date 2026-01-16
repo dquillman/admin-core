@@ -1,0 +1,100 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Helper: Is the user authenticated?
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    // Helper: Is the user an admin according to their profile?
+    function isAdmin() {
+      return isAuthenticated() && 
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+    
+    // Helper: Is this the document for the current user?
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    /**
+     * Users Collection
+     * - Only owners or admins can read user profiles.
+     * - Owners can create their profile but NOT set their own role/disabled status.
+     * - Only admins can update privileged fields (role, disabled).
+     */
+    match /users/{userId} {
+      allow read: if isOwner(userId) || isAdmin();
+      
+      // Permit creation for authenticated users, but enforce default user role
+      allow create: if isOwner(userId) && 
+                      request.resource.data.role == 'user' &&
+                      (!('disabled' in request.resource.data) || request.resource.data.disabled == false);
+      
+      // Allow updates to non-privileged profile data by owner
+      // Allow ALL updates by admin
+      allow update: if (isOwner(userId) && 
+                        request.resource.data.role == resource.data.role && 
+                        request.resource.data.disabled == resource.data.disabled) || 
+                      isAdmin();
+    }
+
+    /**
+     * App-Scoped Collections (apps/{appId}/...)
+     * - config: stores plan settings, limits, etc.
+     * - sources: external monitoring URLs
+     * - audit: admin action logs
+     * - content: question banks, exams (inherited from previous project)
+     */
+    match /apps/{appId} {
+      
+      // App Config (Admins Only)
+      match /config/{docId} {
+        allow read, write: if isAdmin();
+      }
+      
+      // Sources (Admins Only)
+      match /sources/{docId} {
+        allow read, write: if isAdmin();
+      }
+      
+      // Audit Logs (Admins Only)
+      match /audit/{docId} {
+        allow read: if isAdmin();
+        // Allow creation by any admin (via logAdminAction)
+        allow create: if isAdmin() && request.resource.data.adminUid == request.auth.uid;
+      }
+    }
+
+    /**
+     * Content Management (Legacy/Global Context)
+     * - Questions and Exams read-only for authenticated users, write-only for admins.
+     */
+    match /questions/{questionId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+    
+    match /exams/{examId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
+    /**
+     * Public Bug Reporting / Issue Tracking
+     * - Anyone can create an issue.
+     * - Only admins can read/manage them.
+     */
+    match /issues/{issueId} {
+      allow create: if true;
+      allow read, update, delete: if isAdmin();
+    }
+
+    // Default: Deny all other access
+    match /{path=**} {
+      allow read, write: if false;
+    }
+  }
+}
