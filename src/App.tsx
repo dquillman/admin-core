@@ -5,6 +5,7 @@ import Dashboard from './pages/Dashboard';
 import Users from './pages/Users';
 import Plans from './pages/Plans';
 import Sources from './pages/Sources';
+import TesterActivity from './pages/TesterActivity';
 import ProtectedRoute from './components/ProtectedRoute';
 import Layout from './components/Layout';
 
@@ -35,6 +36,7 @@ function App() {
           <Route path="/users" element={<Users />} />
           <Route path="/plans" element={<Plans />} />
           <Route path="/sources" element={<Sources />} />
+          <Route path="/tester-activity" element={<TesterActivity />} />
           <Route path="/settings" element={<Placeholder title="Settings" />} />
         </Route>
 

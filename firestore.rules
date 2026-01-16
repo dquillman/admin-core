@@ -83,6 +83,18 @@ service cloud.firestore {
     }
 
     /**
+     * User Sessions (Tester Activity)
+     * - Admins can read all session data.
+     * - Public/Web app access is handled by the web app's own rules (write-only for owner).
+     * - Here we only need to expose reading for the Admin Core UI.
+     */
+    match /user_sessions/{sessionId} {
+      allow read, list: if isAdmin();
+      // Writing is typically done by the web app, but we can allow admin fixes/cleanup
+      allow write: if isAdmin();
+    }
+
+    /**
      * Public Bug Reporting / Issue Tracking
      * - Anyone can create an issue.
      * - Only admins can read/manage them.

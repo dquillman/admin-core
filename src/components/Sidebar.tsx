@@ -7,7 +7,8 @@ import {
     Globe,
     LogOut,
     ShieldCheck,
-    CreditCard
+    CreditCard,
+    Activity
 } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { AppSelector } from './AppSelector';
@@ -24,6 +25,7 @@ const Sidebar: React.FC = () => {
     const navItems = [
         { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
         { to: '/users', icon: Users, label: 'Users' },
+        { to: '/tester-activity', icon: Activity, label: 'Tester Activity' },
         { to: '/plans', icon: CreditCard, label: 'Plans & Trials' },
         { to: '/sources', icon: Globe, label: 'Sources' },
         { to: '/settings', icon: Settings, label: 'Settings' },

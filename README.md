@@ -56,6 +56,26 @@ npm run test:rules
 
 2. Follow the detailed protocol in [docs/SECURITY_VERIFICATION.md](docs/SECURITY_VERIFICATION.md).
 
+## 📊 Tester Activity Tracking
+
+Monitor real-time user sessions across all managed apps.
+
+### Implementation Guide
+
+- **Admin Core**: Provides the UI and read logic in `/tester-activity`.
+- **ExamCoachPro (External)**: Requires a patch to write session data. See [docs/SESSION_TRACKING_PATCH.md](docs/SESSION_TRACKING_PATCH.md) for the implementation guide.
+- **Auto-Close**: A scheduled Cloud Function is required to timeout inactive sessions.
+
+### Required Firestore Indexes
+
+To support advanced filtering and ordering in the activity dashboard, you must deploy the following composite indexes:
+
+| Collection | Fields | Query Scope |
+|------------|--------|-------------|
+| `user_sessions` | `app` ASC, `loginAt` DESC | Collection |
+| `user_sessions` | `email` ASC, `loginAt` DESC | Collection |
+| `user_sessions` | `logoutAt` ASC, `loginAt` DESC | Collection |
+
 ## 📋 Data Collections (New Schema)
 
 ### App-Scoped (Preferred)

@@ -12,7 +12,8 @@ import {
     updateDoc,
     addDoc,
     deleteDoc,
-    serverTimestamp
+    serverTimestamp,
+    startAfter
 } from 'firebase/firestore';
 import { db, auth } from '../firebase';
 
@@ -147,4 +148,75 @@ export const updateSource = async (appId: string, sourceId: string, data: any) =
     await requireAdmin();
     await updateDoc(doc(db, 'apps', appId, 'sources', sourceId), data);
     await logAdminAction(appId, 'update_source', sourceId, data);
+};
+
+/**
+ * Tester Activity (User Sessions)
+ */
+
+export interface SessionFilters {
+    appId?: string;
+    email?: string;
+    activeOnly?: boolean;
+    dateRange?: '24h' | '7d' | '30d';
+    lastDoc?: any;
+    limitCount?: number;
+}
+
+export const getUserSessions = async (filters: SessionFilters = {}) => {
+    const { appId, email, activeOnly, dateRange, lastDoc, limitCount = 50 } = filters;
+    
+    let q = query(collection(db, 'user_sessions'));
+
+    // Filter by app
+    if (appId) {
+        q = query(q, where('app', '==', appId));
+    }
+
+    // Filter by email (exact match for now)
+    if (email) {
+        q = query(q, where('email', '==', email));
+    }
+
+    // Active Only
+    if (activeOnly) {
+        q = query(q, where('logoutAt', '==', null));
+    }
+
+    // Date Range
+    if (dateRange) {
+        const now = new Date();
+        let startDate: Date;
+        if (dateRange === '24h') startDate = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+        else if (dateRange === '7d') startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+        else startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+        
+        q = query(q, where('loginAt', '>=', Timestamp.fromDate(startDate)));
+    }
+
+    // Order and Limit
+    q = query(q, orderBy('loginAt', 'desc'), limit(limitCount));
+
+    // Pagination
+    if (lastDoc) {
+        q = query(q, startAfter(lastDoc));
+    }
+
+    const querySnapshot = await getDocs(q);
+    return querySnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data(),
+        _raw: doc // For pagination
+    }));
+};
+
+export const getActiveSessionsCount = async (appId?: string) => {
+    let q = query(collection(db, 'user_sessions'), where('logoutAt', '==', null));
+    
+    if (appId) {
+        q = query(q, where('app', '==', appId));
+    }
+
+    const snapshot = await getCountFromServer(q);
+    return snapshot.data().count;
 };
