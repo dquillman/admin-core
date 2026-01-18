@@ -8,7 +8,8 @@ import {
     LogOut,
     ShieldCheck,
     CreditCard,
-    Activity
+    Activity,
+    Rocket
 } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { AppSelector } from './AppSelector';
@@ -28,6 +29,7 @@ const Sidebar: React.FC = () => {
         { to: '/tester-activity', icon: Activity, label: 'Tester Activity' },
         { to: '/plans', icon: CreditCard, label: 'Plans & Trials' },
         { to: '/sources', icon: Globe, label: 'Sources' },
+        { to: '/marketing-assets', icon: Rocket, label: 'Marketing Assets' },
         { to: '/settings', icon: Settings, label: 'Settings' },
     ];
 

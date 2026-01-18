@@ -1,18 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
-import { getUserSessions, getActiveSessionsCount, SessionFilters } from '../services/firestoreService';
+import { getUserSessions, getActiveSessionsCount } from '../services/firestoreService';
+import type { SessionFilters } from '../services/firestoreService';
 import {
     Activity,
     Search,
-    Filter,
     Clock,
     User,
-    Monitor,
     Calendar,
-    ChevronRight,
     Loader2,
-    CheckCircle2,
-    XCircle,
     Info
 } from 'lucide-react';
 import { format } from 'date-fns';
@@ -142,8 +138,8 @@ const TesterActivity: React.FC = () => {
                                     type="button"
                                     onClick={() => setFilters(prev => ({ ...prev, dateRange: range }))}
                                     className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${filters.dateRange === range
-                                            ? 'bg-slate-800 text-white shadow-lg'
-                                            : 'text-slate-500 hover:text-slate-300'
+                                        ? 'bg-slate-800 text-white shadow-lg'
+                                        : 'text-slate-500 hover:text-slate-300'
                                         }`}
                                 >
                                     {range.toUpperCase()}

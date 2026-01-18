@@ -36,9 +36,27 @@ service cloud.firestore {
       // Allow updates to non-privileged profile data by owner
       // Allow ALL updates by admin
       allow update: if (isOwner(userId) && 
-                        request.resource.data.role == resource.data.role && 
-                        request.resource.data.disabled == resource.data.disabled) || 
+                        !request.resource.data.diff(resource.data).affectedKeys()
+                        .hasAny(['role', 'disabled', 'plan', 'trialActive', 'trialEndsAt', 
+                                 'testerOverride', 'testerExpiresAt', 'testerGrantedBy', 'testerGrantedAt'])) || 
                       isAdmin();
+    }
+
+    /**
+     * Admin Audit Logs (Global)
+     * - Only admins can read/write
+     */
+     match /admin_audit/{docId} {
+        allow read, write: if isAdmin();
+     }
+
+    /**
+     * Marketing Assets (Messaging)
+     * - Only admins can read/write in Admin Core.
+     * - Exam Coach uses its own read-only rules or server-side fetch.
+     */
+    match /marketing_assets/{docId} {
+      allow read, write: if isAdmin();
     }
 
     /**
