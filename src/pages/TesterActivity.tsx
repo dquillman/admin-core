@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useAuth } from '../hooks/useAuth';
 import { useApp } from '../context/AppContext';
 import { getUserSessions, getActiveSessionsCount } from '../services/firestoreService';
 import type { SessionFilters } from '../services/firestoreService';
@@ -15,6 +16,7 @@ import { format } from 'date-fns';
 
 const TesterActivity: React.FC = () => {
     const { appId } = useApp();
+    const { isAdmin, loading: authLoading } = useAuth();
     const [sessions, setSessions] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [activeCount, setActiveCount] = useState(0);
@@ -28,10 +30,13 @@ const TesterActivity: React.FC = () => {
     const [hasMore, setHasMore] = useState(false);
 
     useEffect(() => {
-        fetchInitialData();
-    }, [appId, filters.dateRange, filters.activeOnly]);
+        if (!authLoading && isAdmin) {
+            fetchInitialData();
+        }
+    }, [appId, filters.dateRange, filters.activeOnly, authLoading, isAdmin]);
 
     const fetchInitialData = async () => {
+        if (!isAdmin) return;
         setLoading(true);
         try {
             const [sessionData, count] = await Promise.all([

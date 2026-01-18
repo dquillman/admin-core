@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useAuth } from '../hooks/useAuth';
 import { Rocket, Save, Loader2, CheckCircle2, AlertTriangle } from 'lucide-react';
 import { getMarketingAssets, updateMarketingAssets } from '../services/firestoreService';
 import { clsx, type ClassValue } from 'clsx';
@@ -18,11 +19,16 @@ const MarketingAssets: React.FC = () => {
     const [primary, setPrimary] = useState('');
     const [secondary, setSecondary] = useState('');
 
+    const { isAdmin, loading: authLoading } = useAuth();
+
     useEffect(() => {
-        loadData();
-    }, []);
+        if (!authLoading && isAdmin) {
+            loadData();
+        }
+    }, [authLoading, isAdmin]);
 
     const loadData = async () => {
+        if (!isAdmin) return;
         try {
             setLoading(true);
             const data = await getMarketingAssets();

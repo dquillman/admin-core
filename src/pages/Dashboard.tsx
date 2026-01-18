@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useAuth } from '../hooks/useAuth';
 import { getDashboardStats, getRecentAuditLogs } from '../services/firestoreService';
 import { useApp } from '../context/AppContext';
 import {
@@ -41,12 +42,14 @@ const StatCard = ({ title, value, icon: Icon, color, subtitle }: any) => (
 
 const Dashboard: React.FC = () => {
     const { appId } = useApp();
+    const { isAdmin, loading: authLoading } = useAuth();
     const [stats, setStats] = useState<any>(null);
     const [auditLogs, setAuditLogs] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
         const fetchData = async () => {
+            if (!isAdmin) return;
             try {
                 const [statsData, logsData] = await Promise.all([
                     getDashboardStats(),
@@ -60,8 +63,11 @@ const Dashboard: React.FC = () => {
                 setLoading(false);
             }
         };
-        fetchData();
-    }, [appId]);
+
+        if (!authLoading && isAdmin) {
+            fetchData();
+        }
+    }, [appId, authLoading, isAdmin]);
 
     if (loading) {
         return (

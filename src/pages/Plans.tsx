@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { getAppConfig, updateAppConfig } from '../services/firestoreService';
 import { useApp } from '../context/AppContext';
+import { useAuth } from '../hooks/useAuth';
 import {
     CreditCard,
     Clock,
@@ -15,6 +16,7 @@ import {
 
 const PlansPage: React.FC = () => {
     const { appId } = useApp();
+    const { isAdmin, loading: authLoading } = useAuth(); // Auth gating check
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [config, setConfig] = useState<any>({
@@ -28,10 +30,13 @@ const PlansPage: React.FC = () => {
     const [success, setSuccess] = useState(false);
 
     useEffect(() => {
-        fetchConfig();
-    }, [appId]);
+        if (!authLoading && isAdmin) {
+            fetchConfig();
+        }
+    }, [appId, authLoading, isAdmin]);
 
     const fetchConfig = async () => {
+        if (!isAdmin) return; // Guard clause
         setLoading(true);
         try {
             const data = await getAppConfig(appId, 'plans');

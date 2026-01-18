@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import type { User } from 'firebase/auth';
-import { doc, getDoc, setDoc, collection, getDocs, query, serverTimestamp } from 'firebase/firestore';
+import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { auth, db } from '../firebase';
 
 export type UserRole = 'admin' | 'user';
@@ -35,42 +35,30 @@ export const useAuth = () => {
                         role = userDoc.data().role || 'user';
                     } else {
                         // New user, check if we should bootstrap
+                        // Bootstrap logic:
+                        // Instead of scanning all users (which requires admin permissions we don't have yet),
+                        // we strictly trust the environment variable allowlist.
+
                         if (user.email === bootstrapEmail) {
-                            // Check if any admins exist
-
-                            // This is a simplified check. Real bootstrap usually checks for ANY user with role === 'admin'
-                            // but for MVP, if the users collection is small or we check a specific 'config' doc it's better.
-                            // Let's check for any admin.
-                            const adminsSnapshot = await getDocs(query(collection(db, 'users')));
-                            const hasAdmin = adminsSnapshot.docs.some(doc => doc.data().role === 'admin');
-
-                            if (!hasAdmin) {
-                                role = 'admin';
-                                // Create user doc with admin role
-                                await setDoc(doc(db, 'users', user.uid), {
-                                    email: user.email,
-                                    role: 'admin',
-                                    createdAt: serverTimestamp(),
-                                    isBootstrapAdmin: true
-                                });
-
-                                // Write audit log
+                            role = 'admin';
+                            await setDoc(doc(db, 'users', user.uid), {
+                                email: user.email,
+                                role: 'admin',
+                                createdAt: serverTimestamp(),
+                                isBootstrapAdmin: true
+                            });
+                            // Log audit (blind write, might fail if rules strictly enforce admin, but user doc is set now)
+                            try {
                                 await setDoc(doc(db, 'admin_audit', `bootstrap_${Date.now()}`), {
                                     adminUid: user.uid,
                                     action: 'bootstrap_admin',
                                     timestamp: serverTimestamp(),
                                     metadata: { email: user.email }
                                 });
-
-                                console.log('User bootstrapped as admin');
-                            } else {
-                                // Just create normal user doc
-                                await setDoc(doc(db, 'users', user.uid), {
-                                    email: user.email,
-                                    role: 'user',
-                                    createdAt: serverTimestamp()
-                                });
+                            } catch (auditError) {
+                                console.warn("Bootstrap audit log failed", auditError);
                             }
+                            console.log('User bootstrapped as admin');
                         } else {
                             // Create normal user doc
                             await setDoc(doc(db, 'users', user.uid), {

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useAuth } from '../hooks/useAuth';
 import {
     searchUsers,
     getTesterSummaryStats,
@@ -55,19 +56,24 @@ const UsersPage: React.FC = () => {
     const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
 
     const functions = getFunctions();
+    const { isAdmin, loading: authLoading } = useAuth();
 
     // Initial Load
     useEffect(() => {
-        fetchUsers();
-        fetchStats();
-    }, [searchTerm, showTestersOnly]);
+        if (!authLoading && isAdmin) {
+            fetchUsers();
+            fetchStats();
+        }
+    }, [searchTerm, showTestersOnly, authLoading, isAdmin]);
 
     const fetchStats = async () => {
+        if (!isAdmin) return;
         const s = await getTesterSummaryStats();
         setStats(s);
     };
 
     const fetchUsers = async () => {
+        if (!isAdmin) return;
         setLoading(true);
         try {
             let data: User[];

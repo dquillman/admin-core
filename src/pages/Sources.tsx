@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useAuth } from '../hooks/useAuth';
 import { getSources, addSource, deleteSource } from '../services/firestoreService';
 import { useApp } from '../context/AppContext';
 import {
@@ -23,6 +24,7 @@ function cn(...inputs: ClassValue[]) {
 
 const SourcesPage: React.FC = () => {
     const { appId } = useApp();
+    const { isAdmin, loading: authLoading } = useAuth();
     const [sources, setSources] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [showAddModal, setShowAddModal] = useState(false);
@@ -31,10 +33,13 @@ const SourcesPage: React.FC = () => {
     const [actionLoading, setActionLoading] = useState(false);
 
     useEffect(() => {
-        fetchSources();
-    }, [appId]);
+        if (!authLoading && isAdmin) {
+            fetchSources();
+        }
+    }, [appId, authLoading, isAdmin]);
 
     const fetchSources = async () => {
+        if (!isAdmin) return;
         setLoading(true);
         try {
             const data = await getSources(appId);
