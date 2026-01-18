@@ -11,6 +11,7 @@ service cloud.firestore {
     // Helper: Is the user an admin according to their profile?
     function isAdmin() {
       return isAuthenticated() && 
+             exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
              get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
     }
     
@@ -56,7 +57,8 @@ service cloud.firestore {
      * - Exam Coach uses its own read-only rules or server-side fetch.
      */
     match /marketing_assets/{docId} {
-      allow read, write: if isAdmin();
+      allow read: if true; // Public marketing info
+      allow write: if isAdmin();
     }
 
     /**
@@ -68,9 +70,10 @@ service cloud.firestore {
      */
     match /apps/{appId} {
       
-      // App Config (Admins Only)
+      // App Config (Public Read for Plans/Pricing)
       match /config/{docId} {
-        allow read, write: if isAdmin();
+        allow read: if true;
+        allow write: if isAdmin();
       }
       
       // Sources (Admins Only)
@@ -107,9 +110,14 @@ service cloud.firestore {
      * - Here we only need to expose reading for the Admin Core UI.
      */
     match /user_sessions/{sessionId} {
+      // Admin: Full access
       allow read, list: if isAdmin();
-      // Writing is typically done by the web app, but we can allow admin fixes/cleanup
       allow write: if isAdmin();
+      
+      // User: Can read/write their own session (for heartbeat/logout)
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
+      allow update: if isAuthenticated() && resource.data.userId == request.auth.uid;
+      allow read: if isAuthenticated() && resource.data.userId == request.auth.uid;
     }
 
     /**
