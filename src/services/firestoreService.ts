@@ -415,3 +415,30 @@ export const updateMarketingAssets = async (data: { pro_value_primary: string; p
 
     await logGlobalAdminAction('UPDATE_MARKETING_ASSETS', 'examcoach_pro', { data });
 };
+
+// --- Operational Stats Service ---
+export const getActionLatencyCount = async () => {
+    // Note: This reads all quizAttempts documents.
+    // In a high-volume production environment, this should be replaced by a scheduled Cloud Function
+    // that maintains a distributed counter or writes to a stats document.
+    try {
+        const attemptsCol = collection(db, 'quizAttempts');
+        // Fetching all documents (be mindful of read costs)
+        const snap = await getDocs(attemptsCol);
+
+        let sampleCount = 0;
+        snap.forEach(doc => {
+            const data = doc.data();
+            if (Array.isArray(data.details)) {
+                // Count items where actionLatency exists (is not undefined/null)
+                // Note: user said "actionLatency is present"
+                sampleCount += data.details.filter((d: any) => d.actionLatency !== undefined && d.actionLatency !== null).length;
+            }
+        });
+
+        return sampleCount;
+    } catch (error) {
+        console.error("Error counting latency samples:", error);
+        return 0; // Graceful fallback
+    }
+};

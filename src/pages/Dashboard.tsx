@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../hooks/useAuth';
-import { getDashboardStats, getRecentAuditLogs } from '../services/firestoreService';
+import { getDashboardStats, getRecentAuditLogs, getActionLatencyCount } from '../services/firestoreService';
 import { useApp } from '../context/AppContext';
 import {
     Users,
@@ -9,7 +9,8 @@ import {
     Clock,
     Shield,
     ArrowUpRight,
-    Loader2
+    Loader2,
+    Activity
 } from 'lucide-react';
 import {
     BarChart,
@@ -45,18 +46,21 @@ const Dashboard: React.FC = () => {
     const { isAdmin, loading: authLoading } = useAuth();
     const [stats, setStats] = useState<any>(null);
     const [auditLogs, setAuditLogs] = useState<any[]>([]);
+    const [latencyCount, setLatencyCount] = useState<number>(0);
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
         const fetchData = async () => {
             if (!isAdmin) return;
             try {
-                const [statsData, logsData] = await Promise.all([
+                const [statsData, logsData, latencyData] = await Promise.all([
                     getDashboardStats(),
-                    getRecentAuditLogs(appId, 6)
+                    getRecentAuditLogs(appId, 6),
+                    getActionLatencyCount()
                 ]);
                 setStats(statsData);
                 setAuditLogs(logsData);
+                setLatencyCount(latencyData);
             } catch (error) {
                 console.error("Dashboard fetch error:", error);
             } finally {
@@ -98,7 +102,7 @@ const Dashboard: React.FC = () => {
             </div>
 
             {/* Stats Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
                 <StatCard
                     title="Total Users"
                     value={stats?.totalUsers}
@@ -126,6 +130,15 @@ const Dashboard: React.FC = () => {
                     icon={Clock}
                     color="bg-purple-500"
                     subtitle="Last 30 days"
+                />
+
+                {/* Operational Counter */}
+                <StatCard
+                    title="Behavior Samples"
+                    value={latencyCount}
+                    icon={Activity}
+                    color="bg-pink-500"
+                    subtitle="Action Latency data points"
                 />
             </div>
 

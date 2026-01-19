@@ -123,6 +123,14 @@ service cloud.firestore {
       allow read, update, delete: if isAdmin();
     }
 
+    /**
+     * Operational Data (Quiz Attempts)
+     * - Admin read-only for analytics/counting
+     */
+    match /quizAttempts/{attemptId} {
+      allow read: if isAdmin();
+    }
+
     // Default: Deny all other access
     match /{path=**} {
       allow read, write: if false;
