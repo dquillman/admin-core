@@ -9,7 +9,10 @@ import {
     ShieldCheck,
     CreditCard,
     Activity,
-    Rocket
+    Rocket,
+    Megaphone,
+    Filter,
+    CheckCircle2
 } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { AppSelector } from './AppSelector';
@@ -30,6 +33,10 @@ const Sidebar: React.FC = () => {
         { to: '/plans', icon: CreditCard, label: 'Plans & Trials' },
         { to: '/sources', icon: Globe, label: 'Sources' },
         { to: '/marketing-assets', icon: Rocket, label: 'Marketing Assets' },
+        { to: '/marketing/leads', icon: Users, label: 'Leads' },
+        { to: '/marketing/outreach', icon: Megaphone, label: 'Outreach' },
+        { to: '/funnel', icon: Filter, label: 'Funnel' },
+        { to: '/tutor-impact', icon: CheckCircle2, label: 'Tutor Impact' },
         { to: '/settings', icon: Settings, label: 'Settings' },
     ];
 

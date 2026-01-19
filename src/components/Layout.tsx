@@ -1,6 +1,7 @@
 import React from 'react';
 import { Outlet } from 'react-router-dom';
 import Sidebar from './Sidebar';
+import WeeklyReviewModal from './WeeklyReviewModal';
 import { useMigration } from '../hooks/useMigration';
 
 const Layout: React.FC = () => {
@@ -13,6 +14,7 @@ const Layout: React.FC = () => {
                     <Outlet />
                 </div>
             </main>
+            <WeeklyReviewModal />
         </div>
     );
 };

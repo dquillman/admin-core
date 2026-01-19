@@ -124,6 +124,22 @@ service cloud.firestore {
     }
 
     /**
+     * Marketing & Acquisition
+     * - Strictly Admin Only
+     */
+    match /marketing_leads/{leadId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /outreach_logs/{logId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /conversion_events/{eventId} {
+      allow read, write: if isAdmin();
+    }
+
+    /**
      * Operational Data (Quiz Attempts)
      * - Admin read-only for analytics/counting
      */

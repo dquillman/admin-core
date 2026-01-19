@@ -7,6 +7,10 @@ import Plans from './pages/Plans';
 import Sources from './pages/Sources';
 import TesterActivity from './pages/TesterActivity';
 import MarketingAssets from './pages/MarketingAssets';
+import LeadsPage from './pages/Marketing/Leads';
+import OutreachPage from './pages/Marketing/Outreach';
+import Funnel from './pages/Funnel';
+import TutorImpact from './pages/TutorImpact';
 import ProtectedRoute from './components/ProtectedRoute';
 import Layout from './components/Layout';
 
@@ -39,6 +43,10 @@ function App() {
           <Route path="/sources" element={<Sources />} />
           <Route path="/tester-activity" element={<TesterActivity />} />
           <Route path="/marketing-assets" element={<MarketingAssets />} />
+          <Route path="/marketing/leads" element={<LeadsPage />} />
+          <Route path="/marketing/outreach" element={<OutreachPage />} />
+          <Route path="/funnel" element={<Funnel />} />
+          <Route path="/tutor-impact" element={<TutorImpact />} />
           <Route path="/settings" element={<Placeholder title="Settings" />} />
         </Route>
 
