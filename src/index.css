@@ -20,8 +20,10 @@
   font-weight: 400;
 
   color-scheme: dark;
-  background-color: #020617; /* slate-950 */
-  color: #f1f5f9; /* slate-100 */
+  background-color: #020617;
+  /* slate-950 */
+  color: #f1f5f9;
+  /* slate-100 */
 
   font-synthesis: none;
   text-rendering: optimizeLegibility;
@@ -32,7 +34,6 @@
 body {
   margin: 0;
   display: flex;
-  place-content: center;
   min-width: 320px;
   min-height: 100vh;
 }
@@ -45,6 +46,7 @@ body {
   * {
     @apply border-slate-800;
   }
+
   body {
     @apply bg-slate-950 text-slate-100;
   }

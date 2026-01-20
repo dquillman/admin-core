@@ -32,7 +32,15 @@ export const useAuth = () => {
                     const userDoc = await getDoc(doc(db, 'users', user.uid));
 
                     if (userDoc.exists()) {
-                        role = userDoc.data().role || 'user';
+                        const userData = userDoc.data();
+                        role = userData.role || 'user';
+
+                        // Force update if this is the bootstrap user but role is missing/wrong
+                        if (user.email === bootstrapEmail && role !== 'admin') {
+                            role = 'admin';
+                            await setDoc(doc(db, 'users', user.uid), { role: 'admin' }, { merge: true });
+                            console.log("Forced bootstrap admin role update");
+                        }
                     } else {
                         // New user, check if we should bootstrap
                         // Bootstrap logic:
