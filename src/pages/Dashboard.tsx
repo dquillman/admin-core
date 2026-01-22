@@ -7,7 +7,6 @@ import FounderAlerts from '../components/FounderAlerts';
 import DataIntegrityPanel from '../components/DataIntegrityPanel';
 import { useApp } from '../context/AppContext';
 import {
-    Users,
     UserCheck,
     Zap,
     Clock,
@@ -100,10 +99,9 @@ const Dashboard: React.FC = () => {
     }
 
     const chartData = [
-        { name: 'Total', value: stats?.totalUsers || 0, color: '#3b82f6' },
-        { name: 'Pro', value: stats?.proUsers || 0, color: '#10b981' },
-        { name: 'Trial', value: stats?.trialUsers || 0, color: '#f59e0b' },
-        { name: 'New (30d)', value: stats?.recentSignups || 0, color: '#8b5cf6' },
+        { name: 'Granted', value: stats?.grantedTesters || 0, color: '#10b981' },
+        { name: 'Revoked', value: stats?.revokedTesters || 0, color: '#f59e0b' },
+        { name: 'Disabled', value: stats?.disabledUsers || 0, color: '#ef4444' },
     ];
 
     // Determine System Status based on Activation
@@ -170,32 +168,25 @@ const Dashboard: React.FC = () => {
             {/* Stats Grid */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
                 <StatCard
-                    title="Total Users"
-                    value={stats?.totalUsers}
-                    icon={Users}
-                    color="bg-blue-500"
-                    subtitle="All-time registered"
-                />
-                <StatCard
-                    title="Pro Members"
-                    value={stats?.proUsers}
+                    title="Granted (Pro)"
+                    value={stats?.grantedTesters || 0}
                     icon={UserCheck}
                     color="bg-emerald-500"
-                    subtitle="Active subscriptions"
+                    subtitle="Total Granted"
                 />
                 <StatCard
-                    title="In Trial"
-                    value={stats?.trialUsers}
-                    icon={Zap}
+                    title="Revoked (Pro)"
+                    value={stats?.revokedTesters || 0}
+                    icon={Shield}
                     color="bg-amber-500"
-                    subtitle="Currently testing"
+                    subtitle="Total Revoked"
                 />
                 <StatCard
-                    title="Recent Signups"
-                    value={stats?.recentSignups}
-                    icon={Clock}
-                    color="bg-purple-500"
-                    subtitle="Last 30 days"
+                    title="Disabled Users"
+                    value={stats?.disabledUsers || 0}
+                    icon={AlertTriangle}
+                    color="bg-red-500"
+                    subtitle="Access Blocked"
                 />
 
                 {/* Operational Counter */}

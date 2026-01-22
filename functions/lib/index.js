@@ -47,6 +47,21 @@ async function assertAdmin(context) {
         throw new functions.https.HttpsError("permission-denied", "Must be an admin");
     }
 }
+async function updateAdminStats(updates) {
+    try {
+        const statsRef = db.doc("stats/admin_core/summary");
+        const updateData = {
+            lastUpdated: admin.firestore.FieldValue.serverTimestamp()
+        };
+        for (const [key, value] of Object.entries(updates)) {
+            updateData[key] = admin.firestore.FieldValue.increment(value);
+        }
+        await statsRef.set(updateData, { merge: true });
+    }
+    catch (e) {
+        console.warn("Stats update failed (non-critical):", e);
+    }
+}
 exports.grantTesterPro = functions.https.onCall(async (data, context) => {
     await assertAdmin(context);
     const { targetUid } = data;
@@ -81,6 +96,7 @@ exports.grantTesterPro = functions.https.onCall(async (data, context) => {
         },
         createdAt: admin.firestore.FieldValue.serverTimestamp()
     });
+    await updateAdminStats({ grantedTesters: 1 });
     return { success: true };
 });
 exports.revokeTesterPro = functions.https.onCall(async (data, context) => {
@@ -113,6 +129,7 @@ exports.revokeTesterPro = functions.https.onCall(async (data, context) => {
         },
         createdAt: admin.firestore.FieldValue.serverTimestamp()
     });
+    await updateAdminStats({ revokedTesters: 1 });
     return { success: true };
 });
 exports.disableUser = functions.https.onCall(async (data, context) => {
@@ -131,6 +148,7 @@ exports.disableUser = functions.https.onCall(async (data, context) => {
         targetUserId: targetUid,
         createdAt: admin.firestore.FieldValue.serverTimestamp()
     });
+    await updateAdminStats({ disabledUsers: disabled ? 1 : 0 });
     return { success: true };
 });
 exports.autoExpireTesterPro = functions.pubsub.schedule("every 6 hours").onRun(async (context) => {

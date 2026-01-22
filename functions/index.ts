@@ -18,6 +18,26 @@ async function assertAdmin(context: functions.https.CallableContext) {
 }
 
 /**
+ * Helper: Atomically update admin stats (best effort)
+ */
+async function updateAdminStats(updates: { [key: string]: number }) {
+    try {
+        const statsRef = db.doc("stats/admin_core");
+        const updateData: any = {
+            lastUpdated: admin.firestore.FieldValue.serverTimestamp()
+        };
+
+        for (const [key, value] of Object.entries(updates)) {
+            updateData[key] = admin.firestore.FieldValue.increment(value);
+        }
+
+        await statsRef.set(updateData, { merge: true });
+    } catch (e) {
+        console.warn("Stats update failed (non-critical):", e);
+    }
+}
+
+/**
  * Grant "Pro (Tester)" access to a user.
  */
 export const grantTesterPro = functions.https.onCall(async (data, context) => {
@@ -57,6 +77,9 @@ export const grantTesterPro = functions.https.onCall(async (data, context) => {
         createdAt: admin.firestore.FieldValue.serverTimestamp()
     });
 
+    // Best-effort stats update
+    await updateAdminStats({ grantedTesters: 1 });
+
     return { success: true };
 });
 
@@ -93,6 +116,9 @@ export const revokeTesterPro = functions.https.onCall(async (data, context) => {
         createdAt: admin.firestore.FieldValue.serverTimestamp()
     });
 
+    // Best-effort stats update
+    await updateAdminStats({ revokedTesters: 1 });
+
     return { success: true };
 });
 
@@ -117,6 +143,9 @@ export const disableUser = functions.https.onCall(async (data, context) => {
         targetUserId: targetUid,
         createdAt: admin.firestore.FieldValue.serverTimestamp()
     });
+
+    // Best-effort stats update
+    await updateAdminStats({ disabledUsers: disabled ? 1 : 0 });
 
     return { success: true };
 });

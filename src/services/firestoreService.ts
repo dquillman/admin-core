@@ -2,7 +2,6 @@ import {
     collection,
     query,
     where,
-    getDocs,
     orderBy,
     limit,
     Timestamp,
@@ -12,15 +11,22 @@ import {
     addDoc,
     deleteDoc,
     serverTimestamp,
-    startAfter,
     setDoc
 } from 'firebase/firestore';
 import { db, auth } from '../firebase';
-import { safeGetDocs, safeGetDoc, safeGetCount } from '../utils/firestoreSafe';
+import { safeGetDocs, safeGetDoc } from '../utils/firestoreSafe';
 import type { User, TesterStats } from '../types';
 
 // GLOBAL KILL SWITCH - STRICT NO AGGREGATION
-export const CLIENT_STATS_ENABLED = false;
+export const CLIENT_STATS_ENABLED = true; // Enabled but only for safe value reading
+
+export interface AdminStats {
+    grantedTesters: number;
+    revokedTesters: number;
+    disabledUsers: number;
+    totalSessions?: number;
+    lastUpdated?: any;
+}
 
 /**
  * Security Layer: Enforce admin-only access at the service layer
@@ -36,37 +42,21 @@ export const requireAdmin = async () => {
 };
 
 // --- Stats Service ---
+// --- Stats Service ---
 export const getDashboardStats = async () => {
-    if (!CLIENT_STATS_ENABLED) {
-        return { totalUsers: 0, proUsers: 0, trialUsers: 0, recentSignups: 0 };
-    }
-    // Note: Dashboard stats are currently global over all users
     try {
-        const usersCol = collection(db, 'users');
+        // Strict constraint: Read ONLY the precomputed stats document.
+        // No aggregation. No index queries.
+        const statsRef = doc(db, 'stats', 'admin_core');
+        const snap = await getDoc(statsRef);
 
-        // Total Users
-        const totalSnap = await safeGetCount(usersCol, { fallback: 0, context: 'Dashboard', description: 'Total Users' });
-
-        // Pro Users
-        const proSnap = await safeGetCount(query(usersCol, where('isPro', '==', true)), { fallback: 0, context: 'Dashboard', description: 'Pro Users' });
-
-        // Trial Users
-        const trialSnap = await safeGetCount(query(usersCol, where('trial.active', '==', true)), { fallback: 0, context: 'Dashboard', description: 'Trial Users' });
-
-        // Recent Signups (last 30 days)
-        const thirtyDaysAgo = new Date();
-        thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-        const recentSnap = await safeGetCount(query(usersCol, where('createdAt', '>=', Timestamp.fromDate(thirtyDaysAgo))), { fallback: 0, context: 'Dashboard', description: 'Recent Signups' });
-
-        return {
-            totalUsers: totalSnap.data().count,
-            proUsers: proSnap.data().count,
-            trialUsers: trialSnap.data().count,
-            recentSignups: recentSnap.data().count
-        };
+        if (snap.exists()) {
+            return snap.data() as AdminStats;
+        }
+        return {};
     } catch (error) {
-        console.error("Error getting dashboard stats:", error);
-        return { totalUsers: 0, proUsers: 0, trialUsers: 0, recentSignups: 0 };
+        // Silent failure as per requirements
+        return {};
     }
 };
 
@@ -101,56 +91,8 @@ export const getTesterUsers = async (activeOnly: boolean = false): Promise<User[
 };
 
 export const getTesterSummaryStats = async (): Promise<TesterStats> => {
-    if (!CLIENT_STATS_ENABLED) {
-        return { activeTesters: 0, expiringSoon: 0, totalGranted30d: 0 };
-    }
-    try {
-        const usersCol = collection(db, 'users');
-        // const now = Timestamp.now();
-        // const threeDaysFromNow = new Date();
-        // threeDaysFromNow.setDate(threeDaysFromNow.getDate() + 3);
-        // unused vars commented out to fix build
-
-        // Active Testers
-        const activeSnap = await safeGetCount(query(usersCol, where('testerOverride', '==', true)), { fallback: 0, context: 'Stats', description: 'Active Testers' });
-
-        // Expiring Soon (Need specific query or client-side filter if index missing)
-        // Since 'testerExpiresAt' query might need index with 'testerOverride', we'll do client side for MVP or try-catch
-
-        // For exact "Expiring in 3 days", we'd query testerExpiresAt > now AND testerExpiresAt < 3days
-        // Let's assume we can fetch active testers and count in memory for "Expiring Soon" to save indexes
-        // but for "Total Granted 30d" we need audit logs.
-
-        // For "Total Granted 30d", we try the aggregation.
-        // If the index is missing (failed-precondition), we gracefully return 0
-        // instead of crashing or spamming the console with red text (handled by safeGetCount but we want explicit behavior).
-        let totalGranted30d = 0;
-        try {
-            const auditCol = collection(db, 'admin_audit');
-            const thirtyDaysAgo = new Date();
-            thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-
-            const grantedSnap = await safeGetCount(query(
-                auditCol,
-                where('action', '==', 'GRANT_TESTER_PRO'),
-                where('createdAt', '>=', Timestamp.fromDate(thirtyDaysAgo))
-            ), { fallback: 0, context: 'Stats', description: 'Granted Testers' });
-
-            totalGranted30d = grantedSnap.data().count;
-        } catch (indexError) {
-            // Index likely missing. Suppress.
-            totalGranted30d = 0;
-        }
-
-        return {
-            activeTesters: activeSnap.data().count,
-            expiringSoon: 0,
-            totalGranted30d: totalGranted30d
-        };
-    } catch (e) {
-        console.warn("Failed to fetch tester stats", e);
-        return { activeTesters: 0, expiringSoon: 0, totalGranted30d: 0 };
-    }
+    // Reuse the same stats doc
+    return getDashboardStats() as any;
 };
 
 // --- Audit Log Service (App Scoped) ---
@@ -347,64 +289,12 @@ export interface SessionFilters {
     limitCount?: number;
 }
 
-export const getUserSessions = async (filters: SessionFilters = {}) => {
-    if (!CLIENT_STATS_ENABLED) return [];
-    const { appId, email, activeOnly, dateRange, lastDoc, limitCount = 50 } = filters;
-
-    let q = query(collection(db, 'user_sessions'));
-
-    // Filter by app
-    if (appId) {
-        q = query(q, where('app', '==', appId));
-    }
-
-    // Filter by email (exact match for now)
-    if (email) {
-        q = query(q, where('email', '==', email));
-    }
-
-    // Active Only
-    if (activeOnly) {
-        q = query(q, where('logoutAt', '==', null));
-    }
-
-    // Date Range
-    if (dateRange) {
-        const now = new Date();
-        let startDate: Date;
-        if (dateRange === '24h') startDate = new Date(now.getTime() - 24 * 60 * 60 * 1000);
-        else if (dateRange === '7d') startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-        else startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-
-        q = query(q, where('loginAt', '>=', Timestamp.fromDate(startDate)));
-    }
-
-    // Order and Limit
-    q = query(q, orderBy('loginAt', 'desc'), limit(limitCount));
-
-    // Pagination
-    if (lastDoc) {
-        q = query(q, startAfter(lastDoc));
-    }
-
-    const querySnapshot = await safeGetDocs(q, { fallback: [], context: 'Sessions', description: 'Get User Sessions' });
-    return querySnapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data(),
-        _raw: doc // For pagination
-    }));
+export const getUserSessions = async (_filters: SessionFilters = {}) => {
+    return [] as any[]; // List query disabled to prevent index requirements
 };
 
-export const getActiveSessionsCount = async (appId?: string) => {
-    if (!CLIENT_STATS_ENABLED) return 0;
-    let q = query(collection(db, 'user_sessions'), where('logoutAt', '==', null));
-
-    if (appId) {
-        q = query(q, where('app', '==', appId));
-    }
-
-    const snapshot = await safeGetCount(q, { fallback: 0, context: 'Sessions', description: 'Active Count' });
-    return snapshot.data().count;
+export const getActiveSessionsCount = async (_appId?: string) => {
+    return 0; // Aggregation disabled
 };
 
 // --- Marketing Assets Service ---
@@ -432,28 +322,5 @@ export const updateMarketingAssets = async (data: { pro_value_primary: string; p
 
 // --- Operational Stats Service ---
 export const getActionLatencyCount = async () => {
-    if (!CLIENT_STATS_ENABLED) return 0;
-    // Note: This reads all quizAttempts documents.
-    // In a high-volume production environment, this should be replaced by a scheduled Cloud Function
-    // that maintains a distributed counter or writes to a stats document.
-    try {
-        const attemptsCol = collection(db, 'quizAttempts');
-        // Fetching all documents (be mindful of read costs)
-        const snap = await getDocs(attemptsCol);
-
-        let sampleCount = 0;
-        snap.forEach(doc => {
-            const data = doc.data();
-            if (Array.isArray(data.details)) {
-                // Count items where actionLatency exists (is not undefined/null)
-                // Note: user said "actionLatency is present"
-                sampleCount += data.details.filter((d: any) => d.actionLatency !== undefined && d.actionLatency !== null).length;
-            }
-        });
-
-        return sampleCount;
-    } catch (error) {
-        console.error("Error counting latency samples:", error);
-        return 0; // Graceful fallback
-    }
+    return 0; // Aggregation disabled
 };
