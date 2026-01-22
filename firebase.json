@@ -12,10 +12,47 @@
                 "source": "**",
                 "destination": "/index.html"
             }
+        ],
+        "headers": [
+            {
+                "source": "/**",
+                "headers": [
+                    {
+                        "key": "Cache-Control",
+                        "value": "no-cache, no-store, must-revalidate"
+                    },
+                    {
+                        "key": "Cross-Origin-Opener-Policy",
+                        "value": "same-origin-allow-popups"
+                    }
+                ]
+            },
+            {
+                "source": "/assets/**",
+                "headers": [
+                    {
+                        "key": "Cache-Control",
+                        "value": "public, max-age=31536000, immutable"
+                    }
+                ]
+            }
         ]
     },
     "firestore": {
         "rules": "firestore.rules"
+    },
+    "functions": {
+        "codebase": "admin-core-actions",
+        "source": "functions",
+        "runtime": "nodejs22",
+        "ignore": [
+            "node_modules",
+            ".git",
+            "dist",
+            "public",
+            "src",
+            "tests"
+        ]
     },
     "emulators": {
         "firestore": {

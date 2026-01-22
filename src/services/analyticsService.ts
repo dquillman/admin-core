@@ -1,13 +1,12 @@
 import {
     collection,
-    getDocs,
     query,
     where,
-    getCountFromServer,
     limit
 } from 'firebase/firestore';
 import { db } from '../firebase';
 import { requireAdmin } from './firestoreService';
+import { safeGetCount, safeGetDocs } from '../utils/firestoreSafe';
 
 export interface ActivationMetrics {
     totalUsers: number;
@@ -20,13 +19,13 @@ export const getActivationMetrics = async (): Promise<ActivationMetrics> => {
 
     // Total Users
     const usersCol = collection(db, 'users');
-    const totalSnap = await getCountFromServer(usersCol);
+    const totalSnap = await safeGetCount(usersCol, { fallback: 0, context: 'Analytics', description: 'Activation Total' });
     const totalUsers = totalSnap.data().count;
 
     // Activated Users
     // Querying nested fields directly: 'activation.explanationViewed' == true
     const activatedQ = query(usersCol, where('activation.explanationViewed', '==', true));
-    const activatedSnap = await getCountFromServer(activatedQ);
+    const activatedSnap = await safeGetCount(activatedQ, { fallback: 0, context: 'Analytics', description: 'Activated Users' });
     const activatedUsers = activatedSnap.data().count;
 
     return {
@@ -45,13 +44,13 @@ export const getFunnelMetrics = async () => {
 
     // 2. Pricing Viewed
     const eventsCol = collection(db, 'conversion_events');
-    const eventsSnap = await getDocs(eventsCol);
+    const eventsSnap = await safeGetDocs(eventsCol, { fallback: [], context: 'Analytics', description: 'Funnel Events' });
 
     const pricingViewedSet = new Set<string>();
     const upgradeClickedSet = new Set<string>();
     const convertedSet = new Set<string>();
 
-    eventsSnap.forEach(doc => {
+    eventsSnap.docs.forEach(doc => {
         const data = doc.data();
         if (data.event === 'pricing_viewed') pricingViewedSet.add(data.uid);
         if (data.event === 'upgrade_clicked') upgradeClickedSet.add(data.uid);
@@ -89,7 +88,7 @@ export const getTutorImpactMetrics = async (): Promise<TutorImpactMetrics> => {
 
     const usersCol = collection(db, 'users');
     // Limit to 500 recently active for performance in admin panel
-    const usersSnap = await getDocs(query(usersCol, limit(500))); // In real app, order by lastActive
+    const usersSnap = await safeGetDocs(query(usersCol, limit(500)), { fallback: [], context: 'Analytics', description: 'Tutor Impact Sample' }); // In real app, order by lastActive
 
     let groupA_Returners = 0; // Explained & Returned
     let groupA_Total = 0;
@@ -102,7 +101,7 @@ export const getTutorImpactMetrics = async (): Promise<TutorImpactMetrics> => {
 
     const oneDay = 24 * 60 * 60 * 1000;
 
-    usersSnap.forEach(doc => {
+    usersSnap.docs.forEach(doc => {
         const data = doc.data();
         const isExplained = data.activation?.explanationViewed === true;
         const lastActive = data.lastActiveAt?.toDate();

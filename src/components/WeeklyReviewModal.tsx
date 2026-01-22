@@ -7,7 +7,10 @@ import {
 import { getActivationMetrics } from '../services/analyticsService';
 import { Loader2, AlertCircle, CheckCircle2, ArrowRight } from 'lucide-react';
 
+import { useAuth } from '../hooks/useAuth';
+
 const WeeklyReviewModal: React.FC = () => {
+    const { isAdmin, loading: authLoading } = useAuth();
     const [isOpen, setIsOpen] = useState(false);
     const [loading, setLoading] = useState(true);
     const [submitting, setSubmitting] = useState(false);
@@ -15,8 +18,10 @@ const WeeklyReviewModal: React.FC = () => {
     const [decision, setDecision] = useState('');
 
     useEffect(() => {
-        checkReviewStatus();
-    }, []);
+        if (!authLoading && isAdmin) {
+            checkReviewStatus();
+        }
+    }, [authLoading, isAdmin]);
 
     const checkReviewStatus = async () => {
         try {
@@ -80,7 +85,7 @@ const WeeklyReviewModal: React.FC = () => {
                         <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800">
                             <span className="text-slate-500 text-xs uppercase tracking-wider font-bold">Activation Rate</span>
                             <div className={`text-2xl font-bold mt-1 ${(metrics?.activationRate || 0) < 30 ? 'text-red-400' :
-                                    (metrics?.activationRate || 0) < 40 ? 'text-amber-400' : 'text-emerald-400'
+                                (metrics?.activationRate || 0) < 40 ? 'text-amber-400' : 'text-emerald-400'
                                 }`}>
                                 {metrics?.activationRate.toFixed(1)}%
                             </div>

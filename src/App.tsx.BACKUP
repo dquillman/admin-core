@@ -1,4 +1,4 @@
-﻿import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import Login from './pages/Login';
 import AccessDenied from './pages/AccessDenied';
 import Dashboard from './pages/Dashboard';
@@ -42,12 +42,12 @@ function App() {
           <Route path="/users" element={<Users />} />
           <Route path="/plans" element={<Plans />} />
           <Route path="/sources" element={<Sources />} />
-          <Route path="/issues" element={<Placeholder title="Issues" />} />
           <Route path="/tester-activity" element={<TesterActivity />} />
           <Route path="/marketing-assets" element={<MarketingAssets />} />
           <Route path="/marketing/leads" element={<LeadsPage />} />
           <Route path="/marketing/outreach" element={<OutreachPage />} />
           <Route path="/funnel" element={<Funnel />} />
+          <Route path="/tutor-impact" element={<TutorImpact />} />
           <Route path="/tutor-impact" element={<TutorImpact />} />
           <Route path="/activity-2112" element={<Activity2112 />} />
           <Route path="/settings" element={<Placeholder title="Settings" />} />
@@ -60,4 +60,3 @@ function App() {
 }
 
 export default App;
-

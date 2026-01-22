@@ -4,6 +4,7 @@ import { getDashboardStats, getRecentAuditLogs } from '../services/firestoreServ
 import { getActivationMetrics as getActivationMetricsService } from '../services/analyticsService'; // Import from analytics service
 import { getLatestWeeklyReview } from '../services/weeklyReviewService';
 import FounderAlerts from '../components/FounderAlerts';
+import DataIntegrityPanel from '../components/DataIntegrityPanel';
 import { useApp } from '../context/AppContext';
 import {
     Users,
@@ -53,8 +54,10 @@ const Dashboard: React.FC = () => {
     const [activation, setActivation] = useState<{ totalUsers: number; activatedUsers: number; activationRate: number } | null>(null);
     const [weeklyFocus, setWeeklyFocus] = useState<string | null>(null);
     const [loading, setLoading] = useState(true);
+    const [isMounted, setIsMounted] = useState(false);
 
     useEffect(() => {
+        setIsMounted(true);
         const fetchData = async () => {
             if (!isAdmin) return;
             try {
@@ -205,6 +208,10 @@ const Dashboard: React.FC = () => {
                 />
             </div>
 
+            <div className="mt-8">
+                <DataIntegrityPanel />
+            </div>
+
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                 {/* Founder Alerts - Taking prominent spot */}
                 <div className="lg:col-span-2">
@@ -239,64 +246,43 @@ const Dashboard: React.FC = () => {
                 {/* Chart Card - Moved below alerts */}
                 <div className="lg:col-span-2 bg-slate-900 border border-slate-800 rounded-3xl p-8">
                     <h2 className="text-xl font-bold text-white mb-8">User Distribution</h2>
-                    <div className="h-[300px] w-full">
-                        <ResponsiveContainer width="100%" height="100%">
-                            <BarChart data={chartData}>
-                                <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} />
-                                <XAxis
-                                    dataKey="name"
-                                    axisLine={false}
-                                    tickLine={false}
-                                    tick={{ fill: '#94a3b8', fontSize: 12 }}
-                                />
-                                <YAxis
-                                    axisLine={false}
-                                    tickLine={false}
-                                    tick={{ fill: '#94a3b8', fontSize: 12 }}
-                                />
-                                <RechartsTooltip
-                                    cursor={{ fill: 'rgba(255,255,255,0.05)' }}
-                                    contentStyle={{
-                                        backgroundColor: '#0f172a',
-                                        border: '1px solid #1e293b',
-                                        borderRadius: '12px',
-                                        color: '#fff'
-                                    }}
-                                />
-                                <Bar dataKey="value" radius={[8, 8, 0, 0]}>
-                                    {chartData.map((entry, index) => (
-                                        <Cell key={`cell-${index}`} fill={entry.color} fillOpacity={0.8} />
-                                    ))}
-                                </Bar>
-                            </BarChart>
-                        </ResponsiveContainer>
-                    </div>
-                </div>
-
-                {/* Audit Log Card */}
-                <div className="bg-slate-900 border border-slate-800 rounded-3xl p-8">
-                    <div className="flex items-center justify-between mb-8">
-                        <h2 className="text-xl font-bold text-white">Recent Activity</h2>
-                        <Shield className="w-5 h-5 text-slate-500" />
-                    </div>
-                    <div className="space-y-6">
-                        {auditLogs.length > 0 ? auditLogs.map((log) => (
-                            <div key={log.id} className="flex gap-4">
-                                <div className="w-2 h-2 rounded-full bg-brand-500 mt-2 shrink-0 shadow-[0_0_8px_rgba(37,99,235,0.5)]" />
-                                <div>
-                                    <p className="text-sm text-slate-200 leading-tight">
-                                        <span className="font-bold text-white">Admin</span> {log.action.replace(/_/g, ' ')}
-                                    </p>
-                                    <p className="text-xs text-slate-500 mt-1">
-                                        {log.timestamp?.toDate().toLocaleString() || 'Just now'}
-                                    </p>
-                                </div>
-                            </div>
-                        )) : (
-                            <p className="text-sm text-slate-500 italic text-center py-8">No recent activity detected.</p>
+                    <div className="h-[300px] w-full min-h-[300px]">
+                        {isMounted && (
+                            <ResponsiveContainer width="100%" height="100%" minHeight={300}>
+                                <BarChart data={chartData}>
+                                    <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} />
+                                    <XAxis
+                                        dataKey="name"
+                                        axisLine={false}
+                                        tickLine={false}
+                                        tick={{ fill: '#94a3b8', fontSize: 12 }}
+                                    />
+                                    <YAxis
+                                        axisLine={false}
+                                        tickLine={false}
+                                        tick={{ fill: '#94a3b8', fontSize: 12 }}
+                                    />
+                                    <RechartsTooltip
+                                        cursor={{ fill: 'rgba(255,255,255,0.05)' }}
+                                        contentStyle={{
+                                            backgroundColor: '#0f172a',
+                                            border: '1px solid #1e293b',
+                                            borderRadius: '12px',
+                                            color: '#fff'
+                                        }}
+                                    />
+                                    <Bar dataKey="value" radius={[8, 8, 0, 0]}>
+                                        {chartData.map((entry, index) => (
+                                            <Cell key={`cell-${index}`} fill={entry.color} fillOpacity={0.8} />
+                                        ))}
+                                    </Bar>
+                                </BarChart>
+                            </ResponsiveContainer>
                         )}
                     </div>
                 </div>
+
+
             </div>
         </div>
     );

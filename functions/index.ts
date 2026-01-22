@@ -1,6 +1,5 @@
-import { onCall, HttpsError } from "firebase-functions/v2/https";
-import { onSchedule } from "firebase-functions/v2/scheduler";
-import * as admin from "firebase-admin";
+import * as functions from 'firebase-functions';
+import * as admin from 'firebase-admin';
 
 admin.initializeApp();
 const db = admin.firestore();
@@ -8,40 +7,42 @@ const db = admin.firestore();
 /**
  * Helper: Check Admin Role
  */
-async function assertAdmin(auth: any) {
-    if (!auth) throw new HttpsError("unauthenticated", "Must be logged in");
-    const callerDoc = await db.collection("users").doc(auth.uid).get();
+async function assertAdmin(context: functions.https.CallableContext) {
+    if (!context.auth) {
+        throw new functions.https.HttpsError("unauthenticated", "Must be logged in");
+    }
+    const callerDoc = await db.collection("users").doc(context.auth.uid).get();
     if (callerDoc.data()?.role !== "admin") {
-        throw new HttpsError("permission-denied", "Must be an admin");
+        throw new functions.https.HttpsError("permission-denied", "Must be an admin");
     }
 }
 
 /**
  * Grant "Pro (Tester)" access to a user.
  */
-export const grantTesterPro = onCall(async (request) => {
-    await assertAdmin(request.auth);
-    const { targetUid } = request.data;
-    if (!targetUid) throw new HttpsError("invalid-argument", "Target UID required");
+export const grantTesterPro = functions.https.onCall(async (data, context) => {
+    await assertAdmin(context);
+    const { targetUid } = data;
+    if (!targetUid) throw new functions.https.HttpsError("invalid-argument", "Target UID required");
 
     const expiresAt = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000);
     const targetRef = db.collection("users").doc(targetUid);
     const targetDoc = await targetRef.get();
-    if (!targetDoc.exists) throw new HttpsError("not-found", "User not found");
+    if (!targetDoc.exists) throw new functions.https.HttpsError("not-found", "User not found");
 
     const prevState = targetDoc.data();
 
     await targetRef.update({
         testerOverride: true,
         testerExpiresAt: admin.firestore.Timestamp.fromDate(expiresAt),
-        testerGrantedBy: request.auth?.uid,
+        testerGrantedBy: context.auth?.uid,
         testerGrantedAt: admin.firestore.FieldValue.serverTimestamp(),
         isPro: true
     });
 
     await db.collection("admin_audit").add({
         action: "GRANT_TESTER_PRO",
-        adminUid: request.auth?.uid,
+        adminUid: context.auth?.uid,
         targetUserId: targetUid,
         targetUserEmail: prevState?.email || "unknown",
         prevState: {
@@ -59,14 +60,14 @@ export const grantTesterPro = onCall(async (request) => {
     return { success: true };
 });
 
-export const revokeTesterPro = onCall(async (request) => {
-    await assertAdmin(request.auth);
-    const { targetUid } = request.data;
-    if (!targetUid) throw new HttpsError("invalid-argument", "Target UID required");
+export const revokeTesterPro = functions.https.onCall(async (data, context) => {
+    await assertAdmin(context);
+    const { targetUid } = data;
+    if (!targetUid) throw new functions.https.HttpsError("invalid-argument", "Target UID required");
 
     const targetRef = db.collection("users").doc(targetUid);
     const targetDoc = await targetRef.get();
-    if (!targetDoc.exists) throw new HttpsError("not-found", "User not found");
+    if (!targetDoc.exists) throw new functions.https.HttpsError("not-found", "User not found");
 
     const prevState = targetDoc.data();
 
@@ -78,7 +79,7 @@ export const revokeTesterPro = onCall(async (request) => {
 
     await db.collection("admin_audit").add({
         action: "REVOKE_TESTER_PRO",
-        adminUid: request.auth?.uid,
+        adminUid: context.auth?.uid,
         targetUserId: targetUid,
         targetUserEmail: prevState?.email || "unknown",
         prevState: {
@@ -95,10 +96,10 @@ export const revokeTesterPro = onCall(async (request) => {
     return { success: true };
 });
 
-export const disableUser = onCall(async (request) => {
-    await assertAdmin(request.auth);
-    const { targetUid, disabled } = request.data;
-    if (!targetUid) throw new HttpsError("invalid-argument", "Target UID required");
+export const disableUser = functions.https.onCall(async (data, context) => {
+    await assertAdmin(context);
+    const { targetUid, disabled } = data;
+    if (!targetUid) throw new functions.https.HttpsError("invalid-argument", "Target UID required");
 
     // 1. Update Auth
     await admin.auth().updateUser(targetUid, { disabled });
@@ -112,7 +113,7 @@ export const disableUser = onCall(async (request) => {
     // 3. Log Audit
     await db.collection("admin_audit").add({
         action: disabled ? "DISABLE_USER" : "ENABLE_USER",
-        adminUid: request.auth?.uid,
+        adminUid: context.auth?.uid,
         targetUserId: targetUid,
         createdAt: admin.firestore.FieldValue.serverTimestamp()
     });
@@ -123,14 +124,14 @@ export const disableUser = onCall(async (request) => {
 /**
  * Scheduled Job: Auto-expire testers
  */
-export const autoExpireTesterPro = onSchedule("every 6 hours", async () => {
+export const autoExpireTesterPro = functions.pubsub.schedule("every 6 hours").onRun(async (context) => {
     const now = admin.firestore.Timestamp.now();
     const snapshot = await db.collection("users")
         .where("testerOverride", "==", true)
         .where("testerExpiresAt", "<", now)
         .get();
 
-    if (snapshot.empty) return;
+    if (snapshot.empty) return null;
 
     const batch = db.batch();
     const auditBatch = db.batch();
@@ -147,11 +148,12 @@ export const autoExpireTesterPro = onSchedule("every 6 hours", async () => {
             action: "AUTO_EXPIRE_TESTER_PRO",
             adminUid: "SYSTEM",
             targetUserId: userDoc.id,
-            targetUserEmail: userDoc.data().email || "unknown",
+            targetUserEmail: userDoc.data()?.email || "unknown",
             timestamp: admin.firestore.FieldValue.serverTimestamp()
         });
     });
 
     await batch.commit();
     await auditBatch.commit();
+    return null;
 });

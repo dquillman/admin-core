@@ -142,6 +142,15 @@ npm run dev
 firebase emulators:start
 ```
 
+### Authentication Setup
+
+> **Important**: For Google Login to work on your deployed app, you must authorize the domain.
+
+1. Go to **Firebase Console** > **Authentication** > **Settings** > **Authorized Domains**.
+2. Click **Add Domain**.
+3. Enter your hosting domain (e.g., `admin-core-20292.web.app` and `admin-core-20292.firebaseapp.com`).
+4. (Optional) If using a custom domain, add that as well.
+
 ### Build & Deploy
 
 ```bash

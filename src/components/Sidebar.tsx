@@ -12,7 +12,8 @@ import {
     Rocket,
     Megaphone,
     Filter,
-    CheckCircle2
+    CheckCircle2,
+    AlertCircle
 } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { AppSelector } from './AppSelector';
@@ -28,7 +29,9 @@ const Sidebar: React.FC = () => {
 
     const navItems = [
         { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
+        { to: '/activity-2112', icon: Activity, label: '2112 Activity' },
         { to: '/users', icon: Users, label: 'Users' },
+        { to: '/issues', icon: AlertCircle, label: 'Issues' },
         { to: '/tester-activity', icon: Activity, label: 'Tester Activity' },
         { to: '/plans', icon: CreditCard, label: 'Plans & Trials' },
         { to: '/sources', icon: Globe, label: 'Sources' },

@@ -4,7 +4,7 @@
     "exam-coach-ai-platform": {
       "hosting": {
         "admin": [
-          "exam-coach-ai-platform-admin"
+          "admin-core-20292"
         ]
       }
     }

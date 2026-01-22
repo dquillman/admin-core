@@ -3,7 +3,6 @@ import {
     query,
     where,
     getDocs,
-    getCountFromServer,
     orderBy,
     limit,
     Timestamp,
@@ -17,7 +16,11 @@ import {
     setDoc
 } from 'firebase/firestore';
 import { db, auth } from '../firebase';
+import { safeGetDocs, safeGetDoc, safeGetCount } from '../utils/firestoreSafe';
 import type { User, TesterStats } from '../types';
+
+// GLOBAL KILL SWITCH - STRICT NO AGGREGATION
+export const CLIENT_STATS_ENABLED = false;
 
 /**
  * Security Layer: Enforce admin-only access at the service layer
@@ -26,7 +29,7 @@ export const requireAdmin = async () => {
     const user = auth.currentUser;
     if (!user) throw new Error("Access Denied: Not Authenticated");
 
-    const userDoc = await getDoc(doc(db, 'users', user.uid));
+    const userDoc = await safeGetDoc(doc(db, 'users', user.uid), { fallback: null, context: 'Auth', description: 'Check Admin Role' });
     if (!userDoc.exists() || userDoc.data()?.role !== 'admin') {
         throw new Error("Access Denied: Admin Privileges Required");
     }
@@ -34,23 +37,26 @@ export const requireAdmin = async () => {
 
 // --- Stats Service ---
 export const getDashboardStats = async () => {
+    if (!CLIENT_STATS_ENABLED) {
+        return { totalUsers: 0, proUsers: 0, trialUsers: 0, recentSignups: 0 };
+    }
     // Note: Dashboard stats are currently global over all users
     try {
         const usersCol = collection(db, 'users');
 
         // Total Users
-        const totalSnap = await getCountFromServer(usersCol);
+        const totalSnap = await safeGetCount(usersCol, { fallback: 0, context: 'Dashboard', description: 'Total Users' });
 
         // Pro Users
-        const proSnap = await getCountFromServer(query(usersCol, where('isPro', '==', true)));
+        const proSnap = await safeGetCount(query(usersCol, where('isPro', '==', true)), { fallback: 0, context: 'Dashboard', description: 'Pro Users' });
 
         // Trial Users
-        const trialSnap = await getCountFromServer(query(usersCol, where('trial.active', '==', true)));
+        const trialSnap = await safeGetCount(query(usersCol, where('trial.active', '==', true)), { fallback: 0, context: 'Dashboard', description: 'Trial Users' });
 
         // Recent Signups (last 30 days)
         const thirtyDaysAgo = new Date();
         thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-        const recentSnap = await getCountFromServer(query(usersCol, where('createdAt', '>=', Timestamp.fromDate(thirtyDaysAgo))));
+        const recentSnap = await safeGetCount(query(usersCol, where('createdAt', '>=', Timestamp.fromDate(thirtyDaysAgo))), { fallback: 0, context: 'Dashboard', description: 'Recent Signups' });
 
         return {
             totalUsers: totalSnap.data().count,
@@ -76,7 +82,7 @@ export const searchUsers = async (searchTerm: string): Promise<User[]> => {
         q = query(usersCol, where('email', '>=', searchTerm), where('email', '<=', searchTerm + '\uf8ff'), limit(20));
     }
 
-    const snap = await getDocs(q);
+    const snap = await safeGetDocs(q, { fallback: [], context: 'Users', description: 'Search Users' });
     return snap.docs.map(doc => ({ uid: doc.id, ...doc.data() } as User));
 };
 
@@ -90,11 +96,14 @@ export const getTesterUsers = async (activeOnly: boolean = false): Promise<User[
         // For now, let's just return all having the flag
     }
 
-    const snap = await getDocs(q);
+    const snap = await safeGetDocs(q, { fallback: [], context: 'Users', description: 'Get Testers' });
     return snap.docs.map(doc => ({ uid: doc.id, ...doc.data() } as User));
 };
 
 export const getTesterSummaryStats = async (): Promise<TesterStats> => {
+    if (!CLIENT_STATS_ENABLED) {
+        return { activeTesters: 0, expiringSoon: 0, totalGranted30d: 0 };
+    }
     try {
         const usersCol = collection(db, 'users');
         // const now = Timestamp.now();
@@ -103,7 +112,7 @@ export const getTesterSummaryStats = async (): Promise<TesterStats> => {
         // unused vars commented out to fix build
 
         // Active Testers
-        const activeSnap = await getCountFromServer(query(usersCol, where('testerOverride', '==', true)));
+        const activeSnap = await safeGetCount(query(usersCol, where('testerOverride', '==', true)), { fallback: 0, context: 'Stats', description: 'Active Testers' });
 
         // Expiring Soon (Need specific query or client-side filter if index missing)
         // Since 'testerExpiresAt' query might need index with 'testerOverride', we'll do client side for MVP or try-catch
@@ -112,28 +121,31 @@ export const getTesterSummaryStats = async (): Promise<TesterStats> => {
         // Let's assume we can fetch active testers and count in memory for "Expiring Soon" to save indexes
         // but for "Total Granted 30d" we need audit logs.
 
-        // Audit Logs for "Total Granted"
-        // Searching all 'apps/{appId}/audit' is hard.
-        // If we are storing logs in top-level 'admin_audit' (as requested in PART A), we use that.
-        // Assuming we create 'admin_audit' collection for global admin actions:
-        const auditCol = collection(db, 'admin_audit');
-        const thirtyDaysAgo = new Date();
-        thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+        // For "Total Granted 30d", we try the aggregation.
+        // If the index is missing (failed-precondition), we gracefully return 0
+        // instead of crashing or spamming the console with red text (handled by safeGetCount but we want explicit behavior).
+        let totalGranted30d = 0;
+        try {
+            const auditCol = collection(db, 'admin_audit');
+            const thirtyDaysAgo = new Date();
+            thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
-        const grantedSnap = await getCountFromServer(query(
-            auditCol,
-            where('action', '==', 'GRANT_TESTER_PRO'),
-            where('createdAt', '>=', Timestamp.fromDate(thirtyDaysAgo))
-        ));
+            const grantedSnap = await safeGetCount(query(
+                auditCol,
+                where('action', '==', 'GRANT_TESTER_PRO'),
+                where('createdAt', '>=', Timestamp.fromDate(thirtyDaysAgo))
+            ), { fallback: 0, context: 'Stats', description: 'Granted Testers' });
 
-        // For "Expiring Soon", let's just do a best effort with what we have or placeholder
-        // Actually, let's fetch the actual expiring docs if the count isn't massive
-        // Or just use a query if index exists. Let's return 0 if error.
+            totalGranted30d = grantedSnap.data().count;
+        } catch (indexError) {
+            // Index likely missing. Suppress.
+            totalGranted30d = 0;
+        }
 
         return {
             activeTesters: activeSnap.data().count,
-            expiringSoon: 0, // Placeholder until detailed logic
-            totalGranted30d: grantedSnap.data().count
+            expiringSoon: 0,
+            totalGranted30d: totalGranted30d
         };
     } catch (e) {
         console.warn("Failed to fetch tester stats", e);
@@ -145,7 +157,7 @@ export const getTesterSummaryStats = async (): Promise<TesterStats> => {
 export const getRecentAuditLogs = async (appId: string, limitCount: number = 10) => {
     const auditCol = collection(db, 'apps', appId, 'audit');
     const q = query(auditCol, orderBy('timestamp', 'desc'), limit(limitCount));
-    const snap = await getDocs(q);
+    const snap = await safeGetDocs(q, { fallback: [], context: 'Audit', description: 'Recent Logs' });
     return snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 };
 
@@ -193,7 +205,7 @@ export const grantTesterAccess = async (targetUid: string) => {
     if (!adminUser) throw new Error("Not authenticated");
 
     const userRef = doc(db, 'users', targetUid);
-    const userSnap = await getDoc(userRef);
+    const userSnap = await safeGetDoc(userRef, { fallback: null, context: 'Admin', description: 'Grant Access Check' });
     if (!userSnap.exists()) throw new Error("User not found");
 
     const now = new Date();
@@ -219,7 +231,7 @@ export const grantTesterAccess = async (targetUid: string) => {
 export const revokeTesterAccess = async (targetUid: string) => {
     await requireAdmin();
     const userRef = doc(db, 'users', targetUid);
-    const userSnap = await getDoc(userRef);
+    const userSnap = await safeGetDoc(userRef, { fallback: null, context: 'Admin', description: 'Revoke Access Check' });
 
     if (!userSnap.exists()) throw new Error("User not found");
 
@@ -244,7 +256,7 @@ export const fixTesterAccess = async (targetUid: string) => {
     if (!adminUser) throw new Error("Not authenticated");
 
     const userRef = doc(db, 'users', targetUid);
-    const userSnap = await getDoc(userRef);
+    const userSnap = await safeGetDoc(userRef, { fallback: null, context: 'Admin', description: 'Fix Access Check' });
     if (!userSnap.exists()) throw new Error("User not found");
 
     const now = new Date();
@@ -268,15 +280,15 @@ export const fixTesterAccess = async (targetUid: string) => {
 
 // Helper for audit logs
 const pickAccessFields = (data: any) => ({
-    testerOverride: data?.testerOverride,
-    testerExpiresAt: data?.testerExpiresAt,
-    plan: data?.plan,
-    trialActive: data?.trialActive
+    testerOverride: data?.testerOverride ?? null,
+    testerExpiresAt: data?.testerExpiresAt ?? null,
+    plan: data?.plan ?? null,
+    trialActive: data?.trialActive ?? null
 });
 
 // --- App Config Service (App Scoped) ---
 export const getAppConfig = async (appId: string, docId: string) => {
-    const configDoc = await getDoc(doc(db, 'apps', appId, 'config', docId));
+    const configDoc = await safeGetDoc(doc(db, 'apps', appId, 'config', docId), { fallback: null, context: 'Config', description: 'Get App Config' });
     return configDoc.exists() ? configDoc.data() : null;
 };
 
@@ -288,14 +300,14 @@ export const updateAppConfig = async (appId: string, docId: string, data: any) =
 
 // --- Legacy Admin Config Service (for migration) ---
 export const getLegacyAdminConfig = async (docId: string) => {
-    const configDoc = await getDoc(doc(db, 'admin_config', docId));
+    const configDoc = await safeGetDoc(doc(db, 'admin_config', docId), { fallback: null, context: 'Config', description: 'Get Legacy Config' });
     return configDoc.exists() ? configDoc.data() : null;
 };
 
 // --- Sources Service (App Scoped) ---
 export const getSources = async (appId: string) => {
     const sourcesCol = collection(db, 'apps', appId, 'sources');
-    const snap = await getDocs(sourcesCol);
+    const snap = await safeGetDocs(sourcesCol, { fallback: [], context: 'Sources', description: 'Get Sources' });
     return snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 };
 
@@ -336,6 +348,7 @@ export interface SessionFilters {
 }
 
 export const getUserSessions = async (filters: SessionFilters = {}) => {
+    if (!CLIENT_STATS_ENABLED) return [];
     const { appId, email, activeOnly, dateRange, lastDoc, limitCount = 50 } = filters;
 
     let q = query(collection(db, 'user_sessions'));
@@ -374,7 +387,7 @@ export const getUserSessions = async (filters: SessionFilters = {}) => {
         q = query(q, startAfter(lastDoc));
     }
 
-    const querySnapshot = await getDocs(q);
+    const querySnapshot = await safeGetDocs(q, { fallback: [], context: 'Sessions', description: 'Get User Sessions' });
     return querySnapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data(),
@@ -383,13 +396,14 @@ export const getUserSessions = async (filters: SessionFilters = {}) => {
 };
 
 export const getActiveSessionsCount = async (appId?: string) => {
+    if (!CLIENT_STATS_ENABLED) return 0;
     let q = query(collection(db, 'user_sessions'), where('logoutAt', '==', null));
 
     if (appId) {
         q = query(q, where('app', '==', appId));
     }
 
-    const snapshot = await getCountFromServer(q);
+    const snapshot = await safeGetCount(q, { fallback: 0, context: 'Sessions', description: 'Active Count' });
     return snapshot.data().count;
 };
 
@@ -418,6 +432,7 @@ export const updateMarketingAssets = async (data: { pro_value_primary: string; p
 
 // --- Operational Stats Service ---
 export const getActionLatencyCount = async () => {
+    if (!CLIENT_STATS_ENABLED) return 0;
     // Note: This reads all quizAttempts documents.
     // In a high-volume production environment, this should be replaced by a scheduled Cloud Function
     // that maintains a distributed counter or writes to a stats document.
