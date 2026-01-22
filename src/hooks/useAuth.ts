@@ -1,7 +1,7 @@
-import { useState, useEffect } from 'react';
+﻿import { useState, useEffect } from 'react';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import type { User } from 'firebase/auth';
-import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, getDoc } from 'firebase/firestore';
 import { auth, db } from '../firebase';
 
 export type UserRole = 'admin' | 'user';
@@ -25,56 +25,30 @@ export const useAuth = () => {
         const unsubscribe = onAuthStateChanged(auth, async (user) => {
             if (user) {
                 try {
-                    // Check for bootstrap logic
-                    const bootstrapEmail = import.meta.env.VITE_ADMIN_BOOTSTRAP_EMAIL;
-
-                    let role: UserRole = 'user';
+                    // 1. Fetch User Doc
                     const userDoc = await getDoc(doc(db, 'users', user.uid));
 
+                    let role: UserRole = 'user';
+
                     if (userDoc.exists()) {
-                        const userData = userDoc.data();
-                        role = userData.role || 'user';
-
-                        // Force update if this is the bootstrap user but role is missing/wrong
-                        if (user.email === bootstrapEmail && role !== 'admin') {
-                            role = 'admin';
-                            await setDoc(doc(db, 'users', user.uid), { role: 'admin' }, { merge: true });
-                            console.log("Forced bootstrap admin role update");
-                        }
+                        role = userDoc.data()?.role || 'user';
                     } else {
-                        // New user, check if we should bootstrap
-                        // Bootstrap logic:
-                        // Instead of scanning all users (which requires admin permissions we don't have yet),
-                        // we strictly trust the environment variable allowlist.
+                        // Create basic user doc if missing, but DO NOT grant admin automatically
+                        // except maybe for the specific hardcoded bootstrap email if absolutely necessary,
+                        // but user asked for boring/stable.
+                        // Let's stick to reading. If it doesn't exist, they are a user.
+                    }
 
-                        if (user.email === bootstrapEmail) {
-                            role = 'admin';
-                            await setDoc(doc(db, 'users', user.uid), {
-                                email: user.email,
-                                role: 'admin',
-                                createdAt: serverTimestamp(),
-                                isBootstrapAdmin: true
-                            });
-                            // Log audit (blind write, might fail if rules strictly enforce admin, but user doc is set now)
-                            try {
-                                await setDoc(doc(db, 'admin_audit', `bootstrap_${Date.now()}`), {
-                                    adminUid: user.uid,
-                                    action: 'bootstrap_admin',
-                                    timestamp: serverTimestamp(),
-                                    metadata: { email: user.email }
-                                });
-                            } catch (auditError) {
-                                console.warn("Bootstrap audit log failed", auditError);
-                            }
-                            console.log('User bootstrapped as admin');
-                        } else {
-                            // Create normal user doc
-                            await setDoc(doc(db, 'users', user.uid), {
-                                email: user.email,
-                                role: 'user',
-                                createdAt: serverTimestamp()
-                            });
-                        }
+                    // Check bootstrap ONLY if allowed env var matches and they are not admin yet
+                    // This is "healing" logic, which might be okay, but let's keep it simple.
+                    const bootstrapEmail = import.meta.env.VITE_ADMIN_BOOTSTRAP_EMAIL;
+                    if (user.email === bootstrapEmail && role !== 'admin') {
+                        console.warn("Bootstrap user detected without admin role. Run manual bootstrap or check functions.");
+                        // Ideally, we don't do writes in the read hook.
+                        // But for stability, if this is THE admin, let's just let them in.
+                        // No, user said "Login always resolves to a single stable auth state".
+                        // Writing to DB changes state.
+                        // Let's just READ.
                     }
 
                     setState({
@@ -84,10 +58,8 @@ export const useAuth = () => {
                         isAdmin: role === 'admin',
                     });
 
-                    // If logged in but not admin, we might want to sign out or redirect
-                    // But we'll handle that in the UI guard
                 } catch (error) {
-                    console.error("Error in useAuth:", error);
+                    console.error("Auth Error:", error);
                     setState({ user, role: 'user', loading: false, isAdmin: false });
                 }
             } else {
@@ -102,3 +74,4 @@ export const useAuth = () => {
 
     return { ...state, logout };
 };
+

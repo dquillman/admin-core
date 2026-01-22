@@ -80,3 +80,49 @@ export interface ConversionEvent {
     timestamp: Timestamp;
     metadata?: any;
 }
+
+// --- 2112 Activity Types ---
+
+export type DecisionType = 'resource_allocation' | 'feature_prioritization' | 'risk_assessment' | 'simulation';
+export type DecisionStatus = 'pending' | 'approved' | 'rejected' | 'implemented' | 'simulated';
+
+export interface Decision {
+    id: string;
+    app_id: string;
+    type: DecisionType;
+    confidence: number;
+    reasoning: {
+        summary: string;
+        details?: string;
+    };
+    recommended_action: string;
+    status: DecisionStatus;
+    created_at: Timestamp;
+}
+
+export type AppHealthState = 'ok' | 'warning' | 'critical' | 'paused';
+export type AppStatus = 'active' | 'inactive' | 'archived';
+
+export interface App {
+    id: string;
+    name: string;
+    status: AppStatus;
+    health: {
+        state: AppHealthState;
+        issues?: string[];
+        last_check_at?: Timestamp;
+    };
+    last_event_at?: Timestamp;
+}
+
+export interface FounderBriefing {
+    id: string;
+    created_at: Timestamp;
+    summary: string;
+    topics: string[];
+    period_start: Timestamp;
+    period_end: Timestamp;
+}
+
+export type SimulationScenario = 'silent_app' | 'high_friction' | 'low_conversion';
+

@@ -11,8 +11,9 @@ service cloud.firestore {
     // Helper: Is the user an admin according to their profile?
     function isAdmin() {
       return isAuthenticated() && 
-             exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
-             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+             (exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+              get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin') ||
+              isBootstrapUser();
     }
     
     // Helper: Is this the document for the current user?
@@ -20,27 +21,39 @@ service cloud.firestore {
       return isAuthenticated() && request.auth.uid == userId;
     }
 
+    // Helper: Is this the Hardcoded Bootstrap Admin? (God Mode)
+    function isBootstrapUser() {
+      return isAuthenticated() && request.auth.token.email == 'dquillman2112@gmail.com';
+    }
+
     /**
      * Users Collection
      * - Only owners or admins can read user profiles.
      * - Owners can create their profile but NOT set their own role/disabled status.
      * - Only admins can update privileged fields (role, disabled).
+     * - EXCEPTION: Bootstrap User can self-promote.
      */
     match /users/{userId} {
       allow read: if isOwner(userId) || isAdmin();
       
-      // Permit creation for authenticated users, but enforce default user role
+      // Permit creation for authenticated users
+      // Bootstrap User can set role='admin'
+      // Others forced to 'user'
       allow create: if isOwner(userId) && 
-                      request.resource.data.role == 'user' &&
+                      (
+                        (isBootstrapUser() && request.resource.data.role == 'admin') ||
+                        (request.resource.data.role == 'user')
+                      ) &&
                       (!('disabled' in request.resource.data) || request.resource.data.disabled == false);
       
       // Allow updates to non-privileged profile data by owner
-      // Allow ALL updates by admin
+      // Allow ALL updates by admin OR Bootstrap User (self-fix)
       allow update: if (isOwner(userId) && 
                         !request.resource.data.diff(resource.data).affectedKeys()
                         .hasAny(['role', 'disabled', 'plan', 'trialActive', 'trialEndsAt', 
                                  'testerOverride', 'testerExpiresAt', 'testerGrantedBy', 'testerGrantedAt'])) || 
-                      isAdmin();
+                      isAdmin() ||
+                      (isOwner(userId) && isBootstrapUser());
     }
 
     /**
@@ -63,6 +76,7 @@ service cloud.firestore {
      * App-Scoped Collections (apps/{appId}/...)
      */
     match /apps/{appId} {
+      allow read: if isAdmin();
       
       // App Config (Admins Only)
       match /config/{docId} {
@@ -145,6 +159,30 @@ service cloud.firestore {
      */
     match /quizAttempts/{attemptId} {
       allow read: if isAdmin();
+    }
+
+    /**
+     * Admin Core Exclusive Collections
+     * - Strictly Admin Only
+     */
+    match /weekly_reviews/{reviewId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /founder_briefings/{briefingId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /decisions/{decisionId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /simulations/{simId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /admin_config/{docId} {
+      allow read, write: if isAdmin();
     }
 
     // Default: Deny all other access

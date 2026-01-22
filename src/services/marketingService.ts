@@ -6,11 +6,11 @@ import {
     doc,
     serverTimestamp,
     query,
-    orderBy,
-    getDocs,
+    orderBy
 } from 'firebase/firestore';
 import { db } from '../firebase';
 import { requireAdmin } from './firestoreService';
+import { safeGetDocs } from '../utils/firestoreSafe';
 import type { MarketingLead, OutreachLog } from '../types';
 
 // --- Leads Service ---
@@ -18,7 +18,7 @@ import type { MarketingLead, OutreachLog } from '../types';
 export const getMarketingLeads = async (): Promise<MarketingLead[]> => {
     await requireAdmin();
     const q = query(collection(db, 'marketing_leads'), orderBy('createdAt', 'desc'));
-    const snap = await getDocs(q);
+    const snap = await safeGetDocs(q, { fallback: [], context: 'Marketing', description: 'Get Leads' });
     return snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as MarketingLead));
 };
 
@@ -50,7 +50,7 @@ export const getOutreachLogs = async (): Promise<OutreachLog[]> => {
     await requireAdmin();
     // Default to last 30 days or 50 entries for now
     const q = query(collection(db, 'outreach_logs'), orderBy('date', 'desc'));
-    const snap = await getDocs(q);
+    const snap = await safeGetDocs(q, { fallback: [], context: 'Marketing', description: 'Get Outreach Logs' });
     return snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as OutreachLog));
 };
 

@@ -4,9 +4,9 @@ import { getDashboardStats, getRecentAuditLogs } from '../services/firestoreServ
 import { getActivationMetrics as getActivationMetricsService } from '../services/analyticsService'; // Import from analytics service
 import { getLatestWeeklyReview } from '../services/weeklyReviewService';
 import FounderAlerts from '../components/FounderAlerts';
+import DataIntegrityPanel from '../components/DataIntegrityPanel';
 import { useApp } from '../context/AppContext';
 import {
-    Users,
     UserCheck,
     Zap,
     Clock,
@@ -53,8 +53,10 @@ const Dashboard: React.FC = () => {
     const [activation, setActivation] = useState<{ totalUsers: number; activatedUsers: number; activationRate: number } | null>(null);
     const [weeklyFocus, setWeeklyFocus] = useState<string | null>(null);
     const [loading, setLoading] = useState(true);
+    const [isMounted, setIsMounted] = useState(false);
 
     useEffect(() => {
+        setIsMounted(true);
         const fetchData = async () => {
             if (!isAdmin) return;
             try {
@@ -97,10 +99,9 @@ const Dashboard: React.FC = () => {
     }
 
     const chartData = [
-        { name: 'Total', value: stats?.totalUsers || 0, color: '#3b82f6' },
-        { name: 'Pro', value: stats?.proUsers || 0, color: '#10b981' },
-        { name: 'Trial', value: stats?.trialUsers || 0, color: '#f59e0b' },
-        { name: 'New (30d)', value: stats?.recentSignups || 0, color: '#8b5cf6' },
+        { name: 'Granted', value: stats?.grantedTesters || 0, color: '#10b981' },
+        { name: 'Revoked', value: stats?.revokedTesters || 0, color: '#f59e0b' },
+        { name: 'Disabled', value: stats?.disabledUsers || 0, color: '#ef4444' },
     ];
 
     // Determine System Status based on Activation
@@ -167,32 +168,25 @@ const Dashboard: React.FC = () => {
             {/* Stats Grid */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
                 <StatCard
-                    title="Total Users"
-                    value={stats?.totalUsers}
-                    icon={Users}
-                    color="bg-blue-500"
-                    subtitle="All-time registered"
-                />
-                <StatCard
-                    title="Pro Members"
-                    value={stats?.proUsers}
+                    title="Granted (Pro)"
+                    value={stats?.grantedTesters || 0}
                     icon={UserCheck}
                     color="bg-emerald-500"
-                    subtitle="Active subscriptions"
+                    subtitle="Total Granted"
                 />
                 <StatCard
-                    title="In Trial"
-                    value={stats?.trialUsers}
-                    icon={Zap}
+                    title="Revoked (Pro)"
+                    value={stats?.revokedTesters || 0}
+                    icon={Shield}
                     color="bg-amber-500"
-                    subtitle="Currently testing"
+                    subtitle="Total Revoked"
                 />
                 <StatCard
-                    title="Recent Signups"
-                    value={stats?.recentSignups}
-                    icon={Clock}
-                    color="bg-purple-500"
-                    subtitle="Last 30 days"
+                    title="Disabled Users"
+                    value={stats?.disabledUsers || 0}
+                    icon={AlertTriangle}
+                    color="bg-red-500"
+                    subtitle="Access Blocked"
                 />
 
                 {/* Operational Counter */}
@@ -203,6 +197,10 @@ const Dashboard: React.FC = () => {
                     color="bg-orange-500"
                     subtitle={`${activation?.activatedUsers} / ${activation?.totalUsers} users`}
                 />
+            </div>
+
+            <div className="mt-8">
+                <DataIntegrityPanel />
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
@@ -239,64 +237,43 @@ const Dashboard: React.FC = () => {
                 {/* Chart Card - Moved below alerts */}
                 <div className="lg:col-span-2 bg-slate-900 border border-slate-800 rounded-3xl p-8">
                     <h2 className="text-xl font-bold text-white mb-8">User Distribution</h2>
-                    <div className="h-[300px] w-full">
-                        <ResponsiveContainer width="100%" height="100%">
-                            <BarChart data={chartData}>
-                                <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} />
-                                <XAxis
-                                    dataKey="name"
-                                    axisLine={false}
-                                    tickLine={false}
-                                    tick={{ fill: '#94a3b8', fontSize: 12 }}
-                                />
-                                <YAxis
-                                    axisLine={false}
-                                    tickLine={false}
-                                    tick={{ fill: '#94a3b8', fontSize: 12 }}
-                                />
-                                <RechartsTooltip
-                                    cursor={{ fill: 'rgba(255,255,255,0.05)' }}
-                                    contentStyle={{
-                                        backgroundColor: '#0f172a',
-                                        border: '1px solid #1e293b',
-                                        borderRadius: '12px',
-                                        color: '#fff'
-                                    }}
-                                />
-                                <Bar dataKey="value" radius={[8, 8, 0, 0]}>
-                                    {chartData.map((entry, index) => (
-                                        <Cell key={`cell-${index}`} fill={entry.color} fillOpacity={0.8} />
-                                    ))}
-                                </Bar>
-                            </BarChart>
-                        </ResponsiveContainer>
-                    </div>
-                </div>
-
-                {/* Audit Log Card */}
-                <div className="bg-slate-900 border border-slate-800 rounded-3xl p-8">
-                    <div className="flex items-center justify-between mb-8">
-                        <h2 className="text-xl font-bold text-white">Recent Activity</h2>
-                        <Shield className="w-5 h-5 text-slate-500" />
-                    </div>
-                    <div className="space-y-6">
-                        {auditLogs.length > 0 ? auditLogs.map((log) => (
-                            <div key={log.id} className="flex gap-4">
-                                <div className="w-2 h-2 rounded-full bg-brand-500 mt-2 shrink-0 shadow-[0_0_8px_rgba(37,99,235,0.5)]" />
-                                <div>
-                                    <p className="text-sm text-slate-200 leading-tight">
-                                        <span className="font-bold text-white">Admin</span> {log.action.replace(/_/g, ' ')}
-                                    </p>
-                                    <p className="text-xs text-slate-500 mt-1">
-                                        {log.timestamp?.toDate().toLocaleString() || 'Just now'}
-                                    </p>
-                                </div>
-                            </div>
-                        )) : (
-                            <p className="text-sm text-slate-500 italic text-center py-8">No recent activity detected.</p>
+                    <div className="h-[300px] w-full min-h-[300px]">
+                        {isMounted && (
+                            <ResponsiveContainer width="100%" height="100%" minHeight={300}>
+                                <BarChart data={chartData}>
+                                    <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} />
+                                    <XAxis
+                                        dataKey="name"
+                                        axisLine={false}
+                                        tickLine={false}
+                                        tick={{ fill: '#94a3b8', fontSize: 12 }}
+                                    />
+                                    <YAxis
+                                        axisLine={false}
+                                        tickLine={false}
+                                        tick={{ fill: '#94a3b8', fontSize: 12 }}
+                                    />
+                                    <RechartsTooltip
+                                        cursor={{ fill: 'rgba(255,255,255,0.05)' }}
+                                        contentStyle={{
+                                            backgroundColor: '#0f172a',
+                                            border: '1px solid #1e293b',
+                                            borderRadius: '12px',
+                                            color: '#fff'
+                                        }}
+                                    />
+                                    <Bar dataKey="value" radius={[8, 8, 0, 0]}>
+                                        {chartData.map((entry, index) => (
+                                            <Cell key={`cell-${index}`} fill={entry.color} fillOpacity={0.8} />
+                                        ))}
+                                    </Bar>
+                                </BarChart>
+                            </ResponsiveContainer>
                         )}
                     </div>
                 </div>
+
+
             </div>
         </div>
     );
