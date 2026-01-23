@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { getReportedIssues, addIssueNote, updateIssueStatus, deleteIssue } from '../services/firestoreService';
+import { getReportedIssues, addIssueNote, updateIssueStatus, deleteIssue, updateIssueDetails } from '../services/firestoreService';
 import type { ReportedIssue } from '../types';
 
 import {
@@ -27,12 +27,24 @@ const Issues: React.FC = () => {
     const [filterApp, setFilterApp] = useState<string>('all');
     const [filterType, setFilterType] = useState<string>('all');
     const [filterStatus, setFilterStatus] = useState<string>('all');
+    const [filterSeverity, setFilterSeverity] = useState<string>('all');
     const [searchUser, setSearchUser] = useState<string>('');
-    const [sortOrder, setSortOrder] = useState<'newest' | 'oldest'>('newest');
+    const [sortOrder, setSortOrder] = useState<'newest' | 'oldest' | 'severity_desc' | 'severity_asc'>('newest');
 
     useEffect(() => {
         fetchIssues();
     }, []);
+
+    const formatDate = (val: any): string => {
+        try {
+            if (!val) return 'N/A';
+            if (typeof val.toDate === 'function') return val.toDate().toLocaleDateString();
+            if (val instanceof Date) return val.toLocaleDateString();
+            return String(val); // Fallback for strings/numbers
+        } catch (e) {
+            return 'Invalid Date';
+        }
+    };
 
     const fetchIssues = async () => {
         setLoading(true);
@@ -58,6 +70,9 @@ const Issues: React.FC = () => {
 
             if (filterType !== 'all' && issue.type !== filterType) return false;
 
+            const severity = issue.severity || 'S3';
+            if (filterSeverity !== 'all' && severity !== filterSeverity) return false;
+
             if (searchUser) {
                 const searchLower = searchUser.toLowerCase();
                 const userIdMatch = issue.userId?.toLowerCase().includes(searchLower);
@@ -72,19 +87,25 @@ const Issues: React.FC = () => {
                 if (i.createdAt?.toMillis) return i.createdAt.toMillis();
                 return 0;
             };
+
+            if (sortOrder === 'severity_desc' || sortOrder === 'severity_asc') {
+                const sMap: Record<string, number> = { 'S1': 4, 'S2': 3, 'S3': 2, 'S4': 1 };
+                const sA = sMap[a.severity || 'S3'] || 0;
+                const sB = sMap[b.severity || 'S3'] || 0;
+                return sortOrder === 'severity_desc' ? sB - sA : sA - sB;
+            }
+
             const dateA = getMillis(a);
             const dateB = getMillis(b);
             return sortOrder === 'newest' ? dateB - dateA : dateA - dateB;
         });
-    }, [issues, filterApp, filterType, filterStatus, searchUser, sortOrder]);
+    }, [issues, filterApp, filterType, filterStatus, filterSeverity, searchUser, sortOrder]);
 
     const handleAddNoteClick = (issue: ReportedIssue) => {
         setSelectedIssue(issue);
         setNoteText('');
         setIsNoteModalOpen(true);
     };
-
-    // ... (keep middle unchanged) ...
 
     const submitNote = async () => {
         if (!selectedIssue || !noteText.trim()) return;
@@ -107,6 +128,21 @@ const Issues: React.FC = () => {
             case 'bug': return 'bg-red-500/10 text-red-500 border-red-500/20';
             case 'confusion': return 'bg-amber-500/10 text-amber-500 border-amber-500/20';
             case 'feedback': return 'bg-blue-500/10 text-blue-500 border-blue-500/20';
+            case 'ux': return 'bg-purple-500/10 text-purple-500 border-purple-500/20';
+            case 'accessibility': return 'bg-teal-500/10 text-teal-500 border-teal-500/20';
+            case 'tutor-gap': return 'bg-pink-500/10 text-pink-500 border-pink-500/20';
+            case 'mobile': return 'bg-indigo-500/10 text-indigo-500 border-indigo-500/20';
+            default: return 'bg-slate-800 text-slate-400';
+        }
+    };
+
+    const getSeverityColor = (sev?: string) => {
+        const s = sev || 'S3'; // Default to S3
+        switch (s) {
+            case 'S1': return 'bg-red-600 text-white border-red-500 font-bold'; // Critical
+            case 'S2': return 'bg-orange-500/20 text-orange-400 border-orange-500/30'; // High
+            case 'S3': return 'bg-yellow-500/10 text-yellow-500 border-yellow-500/20'; // Medium (Default)
+            case 'S4': return 'bg-slate-800 text-slate-400 border-slate-700'; // Low
             default: return 'bg-slate-800 text-slate-400';
         }
     };
@@ -191,17 +227,43 @@ const Issues: React.FC = () => {
                     <option value="bug">Bug</option>
                     <option value="confusion">Confusion</option>
                     <option value="feedback">Feedback</option>
+                    <option value="ux">UX</option>
+                    <option value="accessibility">Accessibility</option>
+                    <option value="tutor-gap">Tutor Gap</option>
+                    <option value="mobile">Mobile</option>
+                </select>
+
+                {/* Severity Filter */}
+                <select
+                    value={filterSeverity}
+                    onChange={(e) => setFilterSeverity(e.target.value)}
+                    className="bg-slate-950 border border-slate-800 text-slate-300 text-sm rounded-lg focus:ring-brand-500 focus:border-brand-500 block w-full md:w-auto p-2.5"
+                >
+                    <option value="all">All Severities</option>
+                    <option value="S1">S1 (Critical)</option>
+                    <option value="S2">S2 (High)</option>
+                    <option value="S3">S3 (Medium)</option>
+                    <option value="S4">S4 (Low)</option>
                 </select>
 
                 <div className="hidden md:block w-px h-6 bg-slate-800 mx-2"></div>
 
                 {/* Sort Toggle */}
                 <button
-                    onClick={() => setSortOrder(prev => prev === 'newest' ? 'oldest' : 'newest')}
+                    onClick={() => {
+                        const order = ['newest', 'oldest', 'severity_desc', 'severity_asc'];
+                        const next = order[(order.indexOf(sortOrder) + 1) % order.length] as any;
+                        setSortOrder(next);
+                    }}
                     className="flex items-center gap-2 px-4 py-2 bg-slate-950 border border-slate-800 rounded-lg text-slate-300 hover:text-white hover:border-slate-700 transition-all text-sm w-full md:w-auto justify-center ml-auto md:ml-0"
                 >
                     <ArrowUpDown className="w-4 h-4" />
-                    <span>{sortOrder === 'newest' ? 'Newest First' : 'Oldest First'}</span>
+                    <span>
+                        {sortOrder === 'newest' && 'Newest First'}
+                        {sortOrder === 'oldest' && 'Oldest First'}
+                        {sortOrder === 'severity_desc' && 'Severity (High→Low)'}
+                        {sortOrder === 'severity_asc' && 'Severity (Low→High)'}
+                    </span>
                 </button>
             </div>
 
@@ -220,13 +282,18 @@ const Issues: React.FC = () => {
                             <div className="flex flex-col md:flex-row gap-6">
                                 {/* Left: Meta */}
                                 <div className="w-full md:w-48 shrink-0 space-y-3">
-                                    <div className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${getTypeColor(issue.type)} capitalize`}>
-                                        {issue.type}
+                                    <div className="flex gap-2">
+                                        <div className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${getTypeColor(issue.type)} capitalize`}>
+                                            {issue.type}
+                                        </div>
+                                        <div className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${getSeverityColor(issue.severity)}`}>
+                                            {issue.severity || 'S3'}
+                                        </div>
                                     </div>
                                     <div className="flex items-center gap-2 text-slate-400 text-sm">
                                         <Calendar className="w-4 h-4" />
                                         <span>
-                                            {(issue.timestamp?.toDate ? issue.timestamp : issue.createdAt)?.toDate().toLocaleDateString() ?? 'N/A'}
+                                            {formatDate(issue.timestamp || issue.createdAt)}
                                         </span>
                                     </div>
                                     <div className="flex items-center gap-2 text-slate-400 text-sm">
@@ -262,7 +329,7 @@ const Issues: React.FC = () => {
                                                 <div key={idx} className="text-sm text-slate-400 pl-3 border-l-2 border-slate-700">
                                                     {note.text}
                                                     <span className="ml-2 text-xs text-slate-600">
-                                                        - {note.createdAt?.toDate ? note.createdAt.toDate().toLocaleDateString() : ''}
+                                                        - {formatDate(note.createdAt)}
                                                     </span>
                                                 </div>
                                             ))}
@@ -303,6 +370,14 @@ const Issues: React.FC = () => {
                         </div>
                         {/* ... existing note logic ... */}
                         <div className="space-y-4">
+                            <div className="flex justify-between items-center mb-2">
+                                <button
+                                    onClick={() => setNoteText(prev => prev + (prev.length > 0 ? '\n\n' : '') + `OPERATOR NOTE:\nVerdict: \nSeverity: \nImpact: \nRecommendation: `)}
+                                    className="text-xs text-brand-400 hover:text-brand-300 font-medium"
+                                >
+                                    + Insert Operator Template
+                                </button>
+                            </div>
                             <textarea
                                 value={noteText}
                                 onChange={(e) => setNoteText(e.target.value)}
@@ -337,6 +412,57 @@ const Issues: React.FC = () => {
                                     <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Type</label>
                                     <div className={`mt-1 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${getTypeColor(selectedIssue.type)} capitalize`}>
                                         {selectedIssue.type}
+                                    </div>
+                                </div>
+                                <div className="grid grid-cols-2 gap-2">
+                                    <div>
+                                        <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Severity</label>
+                                        <select
+                                            value={selectedIssue.severity || 'S3'}
+                                            onChange={async (e) => {
+                                                const newSev = e.target.value;
+                                                // Optimistic
+                                                setSelectedIssue(prev => prev ? ({ ...prev, severity: newSev } as any) : null);
+                                                try {
+                                                    await updateIssueDetails(selectedIssue.id, { severity: newSev });
+                                                    fetchIssues();
+                                                } catch (err) {
+                                                    console.error("Failed to update severity", err);
+                                                }
+                                            }}
+                                            className="mt-1 block w-full bg-slate-950 border border-slate-800 text-slate-300 text-sm rounded-lg p-1.5 focus:ring-brand-500 focus:border-brand-500"
+                                        >
+                                            <option value="S1">S1 (Critical)</option>
+                                            <option value="S2">S2 (High)</option>
+                                            <option value="S3">S3 (Medium)</option>
+                                            <option value="S4">S4 (Low)</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Edit Type</label>
+                                        <select
+                                            value={selectedIssue.type}
+                                            onChange={async (e) => {
+                                                const newType = e.target.value;
+                                                // Optimistic
+                                                setSelectedIssue(prev => prev ? ({ ...prev, type: newType } as any) : null);
+                                                try {
+                                                    await updateIssueDetails(selectedIssue.id, { type: newType });
+                                                    fetchIssues();
+                                                } catch (err) {
+                                                    console.error("Failed to update type", err);
+                                                }
+                                            }}
+                                            className="mt-1 block w-full bg-slate-950 border border-slate-800 text-slate-300 text-sm rounded-lg p-1.5 focus:ring-brand-500 focus:border-brand-500"
+                                        >
+                                            <option value="bug">Bug</option>
+                                            <option value="confusion">Confusion</option>
+                                            <option value="feedback">Feedback</option>
+                                            <option value="ux">UX</option>
+                                            <option value="accessibility">Accessibility</option>
+                                            <option value="tutor-gap">Tutor Gap</option>
+                                            <option value="mobile">Mobile</option>
+                                        </select>
                                     </div>
                                 </div>
                                 <div>
@@ -384,7 +510,7 @@ const Issues: React.FC = () => {
                                 <div>
                                     <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Timestamp</label>
                                     <div className="mt-1 text-slate-300">
-                                        {(selectedIssue.timestamp?.toDate ? selectedIssue.timestamp : selectedIssue.createdAt)?.toDate().toLocaleString() ?? 'N/A'}
+                                        {formatDate(selectedIssue.timestamp || selectedIssue.createdAt)}
                                     </div>
                                 </div>
                             </div>

@@ -145,3 +145,26 @@ export const getTutorImpactMetrics = async (): Promise<TutorImpactMetrics> => {
         correlationScore: correlationScore
     };
 };
+
+export const getBroadWeeklyActivity = async (): Promise<number> => {
+    await requireAdmin();
+
+    // Broad Activity: Any user with lastActiveAt in the last 7 days
+    try {
+        const usersCol = collection(db, 'users');
+        const sevenDaysAgo = new Date();
+        sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+
+        // Simple range query on a single field (lastActiveAt) requires no composite index
+        const q = query(
+            usersCol,
+            where('lastActiveAt', '>=', sevenDaysAgo)
+        );
+
+        const snap = await safeGetCount(q, { fallback: 0, context: 'Analytics', description: 'Broad Activity Metric' });
+        return snap.data().count;
+    } catch (error) {
+        console.error("Error fetching broad activity:", error);
+        return 0;
+    }
+};

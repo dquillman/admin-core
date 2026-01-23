@@ -6,7 +6,8 @@ import {
     QuerySnapshot,
     DocumentSnapshot,
     AggregateQuerySnapshot,
-    AggregateField
+    AggregateField,
+    getCountFromServer
 } from 'firebase/firestore';
 
 interface SafeReadOptions<T> {
@@ -76,11 +77,17 @@ export const safeGetDoc = async <T>(
  * Returns fallback (usually 0) on error.
  */
 export const safeGetCount = async (
-    _q: Query,
+    q: Query,
     options: SafeReadOptions<number> = { fallback: 0, context: 'Unknown', description: 'Count Docs' }
 ): Promise<AggregateQuerySnapshot<{ count: AggregateField<number> }> | { data: () => { count: number } }> => {
-    // Aggregation disabled to avoid Firestore index dependency and client errors
-    return {
-        data: () => ({ count: options.fallback })
-    } as any;
+    try {
+        const snapshot = await getCountFromServer(q);
+        return snapshot;
+    } catch (error) {
+        // If index is missing or permissions fail, fall back safely
+        logFirestoreError(error, options.context, options.description || 'safeGetCount failed');
+        return {
+            data: () => ({ count: options.fallback })
+        } as any;
+    }
 };

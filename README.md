@@ -1,3 +1,11 @@
+# AdminCore (FROZEN)
+
+> [!CAUTION]
+> **SYSTEM STATUS: FROZEN**
+> **Date**: 2026-01-22
+> **Version**: v0.2.7 (Safe Mode Verified)
+> **Reason**: Post-hardening stabilization. No further changes should be made until explicitly unfrozen.
+
 # Admin Core
 
 A standalone, multi-app admin application for managing the Exam Coach Pro AI platform and related apps.

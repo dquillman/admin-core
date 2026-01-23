@@ -24,6 +24,9 @@ function cn(...inputs: ClassValue[]) {
     return twMerge(clsx(inputs));
 }
 
+
+const ADMINCORE_VERSION = "v0.2.8-stable";
+
 const Sidebar: React.FC = () => {
     const { user, logout } = useAuth();
 
@@ -104,7 +107,7 @@ const Sidebar: React.FC = () => {
                     <span className="font-medium">Sign Out</span>
                 </button>
                 <div className="mt-4 text-center">
-                    <span className="text-xs text-slate-600 font-mono">v0.2.7</span>
+                    <span className="text-xs text-slate-600 font-mono">Admin Core · {ADMINCORE_VERSION}</span>
                 </div>
             </div>
         </aside>

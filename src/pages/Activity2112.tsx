@@ -6,30 +6,36 @@ import {
     getAppHealth,
     getLatestBriefing,
     simulateDecision,
-    getLiveTutorEngagement
+    getLiveTutorEngagement,
+    deleteSimulation
 } from '../services/activityService';
 import type { Decision, App, FounderBriefing, SimulationScenario } from '../types';
 import { Timestamp } from 'firebase/firestore';
-import { Activity } from 'lucide-react';
+import { Activity, Trash2 } from 'lucide-react';
 
 // Helper for relative time (e.g. "2 hours ago")
+// Helper for relative time (e.g. "2 hours ago")
 const timeAgo = (timestamp?: Timestamp | null) => {
-    if (!timestamp) return 'Never';
-    const date = timestamp.toDate();
-    const now = new Date();
-    const seconds = Math.floor((now.getTime() - date.getTime()) / 1000);
+    if (!timestamp || !timestamp.toDate) return 'Never';
+    try {
+        const date = timestamp.toDate();
+        const now = new Date();
+        const seconds = Math.floor((now.getTime() - date.getTime()) / 1000);
 
-    let interval = seconds / 31536000;
-    if (interval > 1) return Math.floor(interval) + " years ago";
-    interval = seconds / 2592000;
-    if (interval > 1) return Math.floor(interval) + " months ago";
-    interval = seconds / 86400;
-    if (interval > 1) return Math.floor(interval) + " days ago";
-    interval = seconds / 3600;
-    if (interval > 1) return Math.floor(interval) + " hours ago";
-    interval = seconds / 60;
-    if (interval > 1) return Math.floor(interval) + " minutes ago";
-    return Math.floor(seconds) + " seconds ago";
+        let interval = seconds / 31536000;
+        if (interval > 1) return Math.floor(interval) + " years ago";
+        interval = seconds / 2592000;
+        if (interval > 1) return Math.floor(interval) + " months ago";
+        interval = seconds / 86400;
+        if (interval > 1) return Math.floor(interval) + " days ago";
+        interval = seconds / 3600;
+        if (interval > 1) return Math.floor(interval) + " hours ago";
+        interval = seconds / 60;
+        if (interval > 1) return Math.floor(interval) + " minutes ago";
+        return Math.floor(seconds) + " seconds ago";
+    } catch (e) {
+        return 'Invalid Date';
+    }
 };
 
 // UI Components
@@ -65,7 +71,12 @@ const Activity2112 = () => {
 
             // Merge and sort decisions by date (desc)
             const allDecisions = [...realDecisions, ...simulationDecisions].sort((x, y) => {
-                return y.created_at.toMillis() - x.created_at.toMillis();
+                const getMillis = (item: any) => {
+                    if (item.created_at?.toMillis) return item.created_at.toMillis();
+                    if (item.createdAt?.toMillis) return item.createdAt.toMillis(); // Fallback
+                    return 0; // Push to bottom if invalid
+                };
+                return getMillis(y) - getMillis(x);
             });
 
             setDecisions(allDecisions);
@@ -114,7 +125,9 @@ const Activity2112 = () => {
                             <SectionHeader title="Latest Founder Briefing" />
                             <div className="bg-slate-900 border border-slate-800 rounded-lg p-6">
                                 <div className="flex justify-between items-start mb-4">
-                                    <h3 className="text-white font-medium">Briefing: {briefing.period_start.toDate().toLocaleDateString()} - {briefing.period_end.toDate().toLocaleDateString()}</h3>
+                                    <h3 className="text-white font-medium">
+                                        Briefing: {briefing.period_start?.toDate ? briefing.period_start.toDate().toLocaleDateString() : 'N/A'} - {briefing.period_end?.toDate ? briefing.period_end.toDate().toLocaleDateString() : 'N/A'}
+                                    </h3>
                                     <span className="text-xs text-slate-500">{timeAgo(briefing.created_at)}</span>
                                 </div>
                                 <div className="text-slate-300 text-sm leading-relaxed whitespace-pre-line mb-4">
@@ -165,8 +178,30 @@ const Activity2112 = () => {
                                             </div>
 
                                             {decision.status === 'simulated' && (
-                                                <div className="mt-2 inline-flex items-center text-[10px] uppercase text-amber-500/70 border border-amber-900/30 px-1.5 py-0.5 rounded bg-amber-950/20">
-                                                    Simulation
+                                                <div className="flex items-center gap-2 mt-2">
+                                                    <div className="inline-flex items-center text-[10px] uppercase text-amber-500/70 border border-amber-900/30 px-1.5 py-0.5 rounded bg-amber-950/20">
+                                                        Simulation
+                                                    </div>
+                                                    {isAdmin && (
+                                                        <button
+                                                            onClick={async (e) => {
+                                                                e.stopPropagation();
+                                                                if (window.confirm("Delete this simulation? This cannot be undone.")) {
+                                                                    try {
+                                                                        await deleteSimulation(decision.id);
+                                                                        setDecisions(prev => prev.filter(d => d.id !== decision.id));
+                                                                    } catch (err) {
+                                                                        console.error("Failed to delete simulation", err);
+                                                                        alert("Failed to delete simulation");
+                                                                    }
+                                                                }
+                                                            }}
+                                                            className="p-1 hover:bg-slate-800 rounded text-slate-600 hover:text-red-400 transition-colors"
+                                                            title="Delete Simulation"
+                                                        >
+                                                            <Trash2 className="w-3.5 h-3.5" />
+                                                        </button>
+                                                    )}
                                                 </div>
                                             )}
                                         </div>
@@ -245,7 +280,7 @@ const Activity2112 = () => {
                                     <Activity className="w-5 h-5 text-indigo-400" />
                                 </div>
                                 <div>
-                                    <div className="text-sm font-medium text-slate-200 mb-0.5">Weekly Active Learners</div>
+                                    <div className="text-sm font-medium text-slate-200 mb-0.5" title="Source: users.activation.explanationViewed == true">Weekly Active Learners</div>
                                     <div className="text-2xl font-bold text-white mb-1">
                                         {liveSignalCount !== null ? liveSignalCount : '...'}
                                     </div>
