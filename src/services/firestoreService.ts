@@ -11,11 +11,12 @@ import {
     addDoc,
     deleteDoc,
     serverTimestamp,
-    setDoc
+    setDoc,
+    arrayUnion
 } from 'firebase/firestore';
 import { db, auth } from '../firebase';
 import { safeGetDocs, safeGetDoc } from '../utils/firestoreSafe';
-import type { User, TesterStats } from '../types';
+import type { User, TesterStats, ReportedIssue, IssueNote } from '../types';
 
 // GLOBAL KILL SWITCH - STRICT NO AGGREGATION
 export const CLIENT_STATS_ENABLED = true; // Enabled but only for safe value reading
@@ -323,4 +324,46 @@ export const updateMarketingAssets = async (data: { pro_value_primary: string; p
 // --- Operational Stats Service ---
 export const getActionLatencyCount = async () => {
     return 0; // Aggregation disabled
+};
+
+// --- Issues Management Service (Read-Only + Notes) ---
+export const getReportedIssues = async (limitCount: number = 100): Promise<ReportedIssue[]> => {
+    try {
+        const issuesCol = collection(db, 'issues');
+        // Client uses 'timestamp', Admin uses 'createdAt'. Order by timestamp for client issues.
+        const q = query(issuesCol, orderBy('timestamp', 'desc'), limit(limitCount));
+        const snap = await safeGetDocs(q, { fallback: [], context: 'Issues', description: 'Get Issues' });
+        return snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as ReportedIssue));
+    } catch (error) {
+        console.error("Failed to fetch reported issues:", error);
+        return [];
+    }
+};
+
+export const addIssueNote = async (issueId: string, text: string) => {
+    await requireAdmin();
+    const user = auth.currentUser;
+    if (!user) throw new Error("Not authenticated");
+
+    const note: IssueNote = {
+        text,
+        adminUid: user.uid,
+        createdAt: Timestamp.now()
+    };
+
+    const issueRef = doc(db, 'issues', issueId);
+    await updateDoc(issueRef, {
+        notes: arrayUnion(note)
+    });
+};
+
+export const updateIssueStatus = async (issueId: string, status: string) => {
+    await requireAdmin();
+    await updateDoc(doc(db, 'issues', issueId), { status });
+};
+
+export const deleteIssue = async (issueId: string) => {
+    await requireAdmin();
+    // Soft delete to allow recovery if needed, and to maintain history
+    await updateDoc(doc(db, 'issues', issueId), { deleted: true });
 };

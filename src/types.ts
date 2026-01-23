@@ -126,3 +126,36 @@ export interface FounderBriefing {
 
 export type SimulationScenario = 'silent_app' | 'high_friction' | 'low_conversion';
 
+
+// --- Issues Management Types ---
+
+export interface IssueNote {
+    text: string;
+    adminUid: string;
+    createdAt: Timestamp;
+}
+
+export interface ReportedIssue {
+    id: string;
+    app: string;
+    userId: string | null;
+    type: 'bug' | 'confusion' | 'feedback';
+    message: string; // Legacy or alternative
+    description?: string; // Actual field from client
+    url: string | null;
+    createdAt?: Timestamp; // Optional (legacy/admin-created)
+    timestamp?: Timestamp; // Primary (client-created)
+    notes?: IssueNote[];
+
+    // Additional Context Fields
+    status?: string;
+    userEmail?: string;
+    version?: string;
+    path?: string;
+    userAgent?: string;
+
+    // Unused / New Fields
+    attachmentUrl?: string | null;
+    deleted?: boolean;
+    updatedAt?: Timestamp;
+}

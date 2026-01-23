@@ -103,6 +103,9 @@ const Sidebar: React.FC = () => {
                     <LogOut className="w-5 h-5 shrink-0" />
                     <span className="font-medium">Sign Out</span>
                 </button>
+                <div className="mt-4 text-center">
+                    <span className="text-xs text-slate-600 font-mono">v0.2.7</span>
+                </div>
             </div>
         </aside>
     );

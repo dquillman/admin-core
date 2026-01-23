@@ -14,6 +14,7 @@ import TutorImpact from './pages/TutorImpact';
 import Activity2112 from './pages/Activity2112';
 import ProtectedRoute from './components/ProtectedRoute';
 import Layout from './components/Layout';
+import Issues from './pages/Issues';
 
 // Placeholder components for pages we haven't built yet
 const Placeholder = ({ title }: { title: string }) => (
@@ -42,7 +43,7 @@ function App() {
           <Route path="/users" element={<Users />} />
           <Route path="/plans" element={<Plans />} />
           <Route path="/sources" element={<Sources />} />
-          <Route path="/issues" element={<Placeholder title="Issues" />} />
+          <Route path="/issues" element={<Issues />} />
           <Route path="/tester-activity" element={<TesterActivity />} />
           <Route path="/marketing-assets" element={<MarketingAssets />} />
           <Route path="/marketing/leads" element={<LeadsPage />} />
