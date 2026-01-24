@@ -35,6 +35,7 @@ const Sidebar: React.FC = () => {
         { to: '/activity-2112', icon: Activity, label: '2112 Activity' },
         { to: '/users', icon: Users, label: 'Users' },
         { to: '/issues', icon: AlertCircle, label: 'Issues' },
+        { to: '/broadcast', icon: Megaphone, label: 'Broadcast' },
         { to: '/tester-activity', icon: Activity, label: 'Tester Activity' },
         { to: '/plans', icon: CreditCard, label: 'Plans & Trials' },
         { to: '/sources', icon: Globe, label: 'Sources' },
