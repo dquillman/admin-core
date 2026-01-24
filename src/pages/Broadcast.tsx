@@ -111,8 +111,8 @@ const Broadcast = () => {
                             <button
                                 onClick={() => setAudience('testers')}
                                 className={`p-3 rounded-lg border text-left flex items-center justify-between transition-colors ${audience === 'testers'
-                                        ? 'bg-indigo-950/30 border-indigo-500 text-indigo-200'
-                                        : 'bg-slate-950 border-slate-800 text-slate-400 hover:border-slate-700'
+                                    ? 'bg-indigo-950/30 border-indigo-500 text-indigo-200'
+                                    : 'bg-slate-950 border-slate-800 text-slate-400 hover:border-slate-700'
                                     }`}
                             >
                                 <span className="flex items-center gap-2">
@@ -125,8 +125,8 @@ const Broadcast = () => {
                             <button
                                 onClick={() => setAudience('all')}
                                 className={`p-3 rounded-lg border text-left flex items-center justify-between transition-colors ${audience === 'all'
-                                        ? 'bg-indigo-950/30 border-indigo-500 text-indigo-200'
-                                        : 'bg-slate-950 border-slate-800 text-slate-400 hover:border-slate-700'
+                                    ? 'bg-indigo-950/30 border-indigo-500 text-indigo-200'
+                                    : 'bg-slate-950 border-slate-800 text-slate-400 hover:border-slate-700'
                                     }`}
                             >
                                 <span className="flex items-center gap-2">
@@ -192,8 +192,8 @@ const Broadcast = () => {
                     {/* Status Card */}
                     {result && (
                         <div className={`p-4 rounded-lg border ${result.success
-                                ? 'bg-emerald-950/20 border-emerald-500/50 text-emerald-300'
-                                : 'bg-red-950/20 border-red-500/50 text-red-300'
+                            ? 'bg-emerald-950/20 border-emerald-500/50 text-emerald-300'
+                            : 'bg-red-950/20 border-red-500/50 text-red-300'
                             }`}>
                             <h4 className="font-semibold text-sm mb-1">{result.success ? 'Draft Saved' : 'Error'}</h4>
                             <p className="text-xs opacity-90">{result.message}</p>
@@ -210,11 +210,11 @@ const Broadcast = () => {
                             className="w-full bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium py-2 px-4 rounded-lg transition-colors flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-indigo-900/20"
                         >
                             <Save className="w-3 h-3" />
-                            {isSaving ? 'Saving...' : 'Save Draft'}
+                            {isSaving ? 'Saving...' : 'Save Draft (stored safely)'}
                         </button>
 
                         <p className="text-xs text-slate-500 mt-3 text-center">
-                            This will ONLY save a draft.<br />No emails are sent.
+                            Drafts are saved to the system but cannot be reopened yet.
                         </p>
                     </div>
 

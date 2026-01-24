@@ -1,24 +1,26 @@
-# AG_TASK: Sidebar Beta Tooltip
+# AG_TASK: Broadcast Expectation Fix
 
-**Task:** Add a tooltip to the "Beta" label in the Admin Core Sidebar.
+**Task:** Fix misleading UI text in Broadcast.tsx to clarify drafts are currently write-only.
 
 ## 🔒 EXECUTION CONSTRAINTS
 
-* **Branch:** `feat/sidebar-tooltip`
-* **Scope:** `src/components/Sidebar.tsx` ONLY.
-* **Safety:** UI-only. NO Functions. NO Auth.
+* **Branch:** `fix/broadcast-ui-text`
+* **Scope:** `src/pages/Broadcast.tsx` ONLY.
+* **Safety:** Text-only UI changes. NO Logic. NO Backend.
 
 ## 🧩 REQUIREMENTS
 
-1. **Modify `Sidebar.tsx`**:
-    * Locate the "Beta" span added in the previous task.
-    * Add a `title` attribute with the text: "This area is in beta. Features may change during testing."
-    * (Optionally verify if a custom Tooltip component is standard pattern, but default to `title` for zero-risk).
+1. **Modify `Broadcast.tsx`**:
+    * Locate the "Save Draft" button.
+    * Update label to: "Save Draft (stored safely)".
+    * Update the existing helper text (or add new if missing) below the button to exactly: "Drafts are saved to the system but cannot be reopened yet."
+    * Ensure helper text is visibly distinct (text-xs, text-amber-500/80 or slate-500, but explicit about the limitation).
 
 2. **Verify Build**:
     * Run `npm run build`.
 
 ## 📦 COMPLETION CRITERIA
 
+* UI text updated.
 * Code committed.
 * Build passed.
