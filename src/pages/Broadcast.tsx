@@ -14,6 +14,7 @@ const Broadcast = () => {
     const [isSaving, setIsSaving] = useState(false);
     const [result, setResult] = useState<{ success: boolean; message: string } | null>(null);
     const [drafts, setDrafts] = useState<any[]>([]);
+    const [loadedDraft, setLoadedDraft] = useState<any | null>(null);
 
     // Fetch Drafts
     React.useEffect(() => {
@@ -122,6 +123,18 @@ const Broadcast = () => {
 
                 {/* Left: Inputs */}
                 <div className="md:col-span-2 space-y-4">
+
+                    {/* Loaded Draft Context */}
+                    {loadedDraft && (
+                        <div className="bg-slate-900/50 border border-slate-700/50 rounded px-3 py-2 flex items-center justify-between text-xs mb-2">
+                            <span className="text-slate-400">
+                                Editing draft from <strong className="text-slate-300">{loadedDraft.creatorEmail}</strong>
+                            </span>
+                            <span className="text-slate-500">
+                                Created {loadedDraft.createdAt?.toDate?.()?.toLocaleString() || 'Unknown'}
+                            </span>
+                        </div>
+                    )}
 
                     {/* Audience */}
                     <div className="space-y-2">
@@ -255,15 +268,18 @@ const Broadcast = () => {
                                             setSubject(draft.subject);
                                             setMessage(draft.body);
                                             setAudience(draft.audience as any);
+                                            setLoadedDraft(draft);
                                         }}
                                         className="p-3 rounded bg-slate-950 border border-slate-800 hover:border-indigo-500/50 cursor-pointer transition-all group"
                                     >
                                         <p className="text-sm font-medium text-slate-300 truncate group-hover:text-indigo-300">
                                             {draft.subject || '(No Subject)'}
                                         </p>
-                                        <div className="flex items-center justify-between mt-2 text-[10px] text-slate-500">
-                                            <span>{draft.createdAt?.toDate?.()?.toLocaleDateString() || 'Just now'}</span>
-                                            <span className="truncate max-w-[100px]">{draft.creatorEmail}</span>
+                                        <div className="flex flex-col gap-1 mt-2 text-[10px] text-slate-500">
+                                            <div className="flex justify-between">
+                                                <span>By: {draft.creatorEmail || 'Unknown'}</span>
+                                                <span>{draft.createdAt?.toDate?.()?.toLocaleDateString() || 'Just now'}</span>
+                                            </div>
                                         </div>
                                     </div>
                                 ))
