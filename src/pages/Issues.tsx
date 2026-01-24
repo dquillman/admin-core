@@ -29,7 +29,8 @@ const Issues: React.FC = () => {
     const [filterStatus, setFilterStatus] = useState<string>('all');
     const [filterSeverity, setFilterSeverity] = useState<string>('all');
     const [searchUser, setSearchUser] = useState<string>('');
-    const [sortOrder, setSortOrder] = useState<'newest' | 'oldest' | 'severity_desc' | 'severity_asc' | 'type_asc' | 'type_desc'>('newest');
+    const [filterClassification, setFilterClassification] = useState<string>('all');
+    const [sortOrder, setSortOrder] = useState<'newest' | 'oldest' | 'severity_desc' | 'severity_asc' | 'type_asc' | 'type_desc' | 'classification_risk'>('newest');
 
     useEffect(() => {
         fetchIssues();
@@ -70,6 +71,11 @@ const Issues: React.FC = () => {
 
             if (filterType !== 'all' && issue.type !== filterType) return false;
 
+            if (filterClassification !== 'all') {
+                if (filterClassification === 'unclassified' && issue.classification) return false;
+                if (filterClassification !== 'unclassified' && issue.classification !== filterClassification) return false;
+            }
+
             const severity = issue.severity || 'S3';
             if (filterSeverity !== 'all' && severity !== filterSeverity) return false;
 
@@ -88,6 +94,15 @@ const Issues: React.FC = () => {
                 return 0;
             };
 
+            if (sortOrder === 'classification_risk') {
+                const cMap: Record<string, number> = { 'blocking': 5, 'misleading': 4, 'trust': 3, 'cosmetic': 2, 'unclassified': 1 };
+                const cA = cMap[a.classification || 'unclassified'] || 1;
+                const cB = cMap[b.classification || 'unclassified'] || 1;
+                // If same classification, fallback to newest
+                if (cA === cB) return getMillis(b) - getMillis(a);
+                return cB - cA; // Descending risk
+            }
+
             if (sortOrder === 'severity_desc' || sortOrder === 'severity_asc') {
                 const sMap: Record<string, number> = { 'S1': 4, 'S2': 3, 'S3': 2, 'S4': 1 };
                 const sA = sMap[a.severity || 'S3'] || 0;
@@ -105,7 +120,7 @@ const Issues: React.FC = () => {
             const dateB = getMillis(b);
             return sortOrder === 'newest' ? dateB - dateA : dateA - dateB;
         });
-    }, [issues, filterApp, filterType, filterStatus, filterSeverity, searchUser, sortOrder]);
+    }, [issues, filterApp, filterType, filterStatus, filterSeverity, filterClassification, searchUser, sortOrder]);
 
     const handleAddNoteClick = (issue: ReportedIssue) => {
         setSelectedIssue(issue);
@@ -239,6 +254,20 @@ const Issues: React.FC = () => {
                     <option value="mobile">Mobile</option>
                 </select>
 
+                {/* Classification Filter */}
+                <select
+                    value={filterClassification}
+                    onChange={(e) => setFilterClassification(e.target.value)}
+                    className="bg-slate-950 border border-slate-800 text-slate-300 text-sm rounded-lg focus:ring-brand-500 focus:border-brand-500 block w-full md:w-auto p-2.5"
+                >
+                    <option value="all">Class: All</option>
+                    <option value="blocking">Blocking</option>
+                    <option value="misleading">Misleading</option>
+                    <option value="trust">Trust</option>
+                    <option value="cosmetic">Cosmetic</option>
+                    <option value="unclassified">Unclassified</option>
+                </select>
+
                 {/* Severity Filter */}
                 <select
                     value={filterSeverity}
@@ -266,6 +295,7 @@ const Issues: React.FC = () => {
                         <option value="oldest">Oldest First</option>
                         <option value="severity_desc">Severity (High → Low)</option>
                         <option value="severity_asc">Severity (Low → High)</option>
+                        <option value="classification_risk">Risk (Classification)</option>
                         <option value="type_asc">Type (A → Z)</option>
                         <option value="type_desc">Type (Z → A)</option>
                     </select>

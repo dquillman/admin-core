@@ -1,37 +1,35 @@
-# AG_TASK: Issue Classification
+# AG_TASK: Issue Classification Filter
 
-**Task:** Add manual classification tags to the Issues page.
+**Task:** Add client-side filtering and sorting by issue classification.
 
 ## 🔒 EXECUTION CONSTRAINTS
 
-* **Branch:** `feat/issue-classification`
-* **Scope:** `src/pages/Issues.tsx`, `src/types.ts` (if types exist there).
-* **Safety:** UI + DB Update (on existing doc). NO Functions.
+* **Branch:** `feat/issue-classification-filter`
+* **Scope:** `src/pages/Issues.tsx` ONLY.
+* **Safety:** UI-only. NO Backend queries.
 
 ## 🧩 REQUIREMENTS
 
-1. **Type Extension**:
-    * Update Issue interface to include `classification?: 'blocking' | 'misleading' | 'trust' | 'cosmetic'`.
+1. **Filter Controls**:
+    * Add a new dropdown next to the Severity/Type filters.
+    * Options: All, Blocking, Misleading, Trust, Cosmetic, Unclassified.
+    * State: `filterClassification`.
 
-2. **Detail View (Dropdown)**:
-    * Add a select/dropdown component to the issue details pane.
-    * Labels: Blocking, Misleading, Trust, Cosmetic.
-    * On change -> update the document in Firestore immediately (or as part of save if applicable).
+2. **Filtering Logic**:
+    * Update `filteredIssues` useMemo.
+    * If `filterClassification` is set, only return issues matching `classification`.
+    * Handle "Unclassified" correctly (where `classification` is undefined/null).
 
-3. **List View (Badge)**:
-    * Render a colored badge for the classification.
-        * Blocking: Red
-        * Misleading: Orange
-        * Trust: Purple
-        * Cosmetic: Blue
-        * Unclassified: Gray (or valid to hide if minimal).
+3. **Sorting Logic (Group by Risk)**:
+    * Add a new sort option: "Risk (Classification)".
+    * Order: Blocking > Misleading > Trust > Cosmetic > Unclassified.
 
 4. **Verify Build**:
     * Run `npm run build`.
 
 ## 📦 COMPLETION CRITERIA
 
-* Issues can be tagged.
-* Tags persist.
+* Filters working.
+* Sorting working.
 * Code committed.
 * Build passed.
