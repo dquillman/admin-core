@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../hooks/useAuth';
 import { getDashboardStats, getRecentAuditLogs } from '../services/firestoreService';
-import { getActivationMetrics as getActivationMetricsService } from '../services/analyticsService'; // Import from analytics service
+import { getActivationMetrics as getActivationMetricsService, getBroadWeeklyActivity } from '../services/analyticsService'; // Import from analytics service
 import { getLatestWeeklyReview } from '../services/weeklyReviewService';
 import FounderAlerts from '../components/FounderAlerts';
 import DataIntegrityPanel from '../components/DataIntegrityPanel';
@@ -51,6 +51,7 @@ const Dashboard: React.FC = () => {
     const [stats, setStats] = useState<any>(null);
     const [auditLogs, setAuditLogs] = useState<any[]>([]);
     const [activation, setActivation] = useState<{ totalUsers: number; activatedUsers: number; activationRate: number } | null>(null);
+    const [broadActivity, setBroadActivity] = useState<number>(0);
     const [weeklyFocus, setWeeklyFocus] = useState<string | null>(null);
     const [loading, setLoading] = useState(true);
     const [isMounted, setIsMounted] = useState(false);
@@ -60,10 +61,11 @@ const Dashboard: React.FC = () => {
         const fetchData = async () => {
             if (!isAdmin) return;
             try {
-                const [statsData, logsData, activationData] = await Promise.all([
+                const [statsData, logsData, activationData, broadActivityCount] = await Promise.all([
                     getDashboardStats(),
                     getRecentAuditLogs(appId, 6),
-                    getActivationMetricsService()
+                    getActivationMetricsService(),
+                    getBroadWeeklyActivity()
                 ]);
 
                 // Fetch latest review specifically for the focus card
@@ -78,6 +80,7 @@ const Dashboard: React.FC = () => {
                 setStats(statsData);
                 setAuditLogs(logsData);
                 setActivation(activationData);
+                setBroadActivity(broadActivityCount);
             } catch (error) {
                 console.error("Dashboard fetch error:", error);
             } finally {
@@ -166,7 +169,7 @@ const Dashboard: React.FC = () => {
 
 
             {/* Stats Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-6">
                 <StatCard
                     title="Granted (Pro)"
                     value={stats?.grantedTesters || 0}
@@ -196,6 +199,14 @@ const Dashboard: React.FC = () => {
                     icon={Zap}
                     color="bg-orange-500"
                     subtitle={`${activation?.activatedUsers} / ${activation?.totalUsers} users`}
+                />
+                {/* New Broad Activity Card */}
+                <StatCard
+                    title="Broad Activity (7d)"
+                    value={broadActivity}
+                    icon={UserCheck}
+                    color="bg-indigo-500"
+                    subtitle="Any activity in 7 days"
                 />
             </div>
 

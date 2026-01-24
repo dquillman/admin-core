@@ -7,7 +7,9 @@ import {
     addDoc,
     serverTimestamp,
     Timestamp,
-    where
+    where,
+    deleteDoc,
+    doc
 } from 'firebase/firestore';
 import { safeGetDocs, safeGetCount } from '../utils/firestoreSafe';
 import type { Decision, App, FounderBriefing, SimulationScenario } from '../types';
@@ -174,4 +176,10 @@ export const simulateDecision = async (appId: string, scenario: SimulationScenar
     // GUARDRAIL: Strict separation of simulation data.
     // Never write to 'decisions' (production log).
     await addDoc(collection(db, 'simulations'), simulationData);
+};
+
+export const deleteSimulation = async (simulationId: string): Promise<void> => {
+    // Safety check: ID validation logic could go here, but collection scope is minimal.
+    // Ensure we are operating on the 'simulations' collection only.
+    await deleteDoc(doc(db, 'simulations', simulationId));
 };

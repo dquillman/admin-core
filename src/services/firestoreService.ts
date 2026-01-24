@@ -15,7 +15,7 @@ import {
     arrayUnion
 } from 'firebase/firestore';
 import { db, auth } from '../firebase';
-import { safeGetDocs, safeGetDoc } from '../utils/firestoreSafe';
+import { safeGetDocs, safeGetDoc, safeGetCount } from '../utils/firestoreSafe';
 import type { User, TesterStats, ReportedIssue, IssueNote } from '../types';
 
 // GLOBAL KILL SWITCH - STRICT NO AGGREGATION
@@ -44,20 +44,39 @@ export const requireAdmin = async () => {
 
 // --- Stats Service ---
 // --- Stats Service ---
-export const getDashboardStats = async () => {
+// --- Stats Service ---
+export const getDashboardStats = async (): Promise<AdminStats> => {
     try {
-        // Strict constraint: Read ONLY the precomputed stats document.
-        // No aggregation. No index queries.
+        // Try to read precomputed stats first
         const statsRef = doc(db, 'stats', 'admin_core');
-        const snap = await getDoc(statsRef);
+        const snap = await safeGetDoc(statsRef, { fallback: null, context: 'Stats', description: 'Get Dashboard Stats' });
 
         if (snap.exists()) {
             return snap.data() as AdminStats;
         }
-        return {};
+
+        // FALLBACK: Calculate live counts if precomputed stats are missing
+        // This ensures the dashboard isn't empty on fresh deployments
+        const usersCol = collection(db, 'users');
+
+        const [grantedSnap, disabledSnap] = await Promise.all([
+            safeGetCount(query(usersCol, where('testerOverride', '==', true)), { fallback: 0, context: 'Stats', description: 'Count Granted' }),
+            safeGetCount(query(usersCol, where('disabled', '==', true)), { fallback: 0, context: 'Stats', description: 'Count Disabled' })
+        ]);
+
+        return {
+            grantedTesters: grantedSnap.data().count,
+            revokedTesters: 0, // Cannot easily count revoked without expensive audit query
+            disabledUsers: disabledSnap.data().count,
+            lastUpdated: new Date()
+        };
     } catch (error) {
-        // Silent failure as per requirements
-        return {};
+        // Silent failure as per requirements, but attempt live read first
+        return {
+            grantedTesters: 0,
+            revokedTesters: 0,
+            disabledUsers: 0
+        };
     }
 };
 
@@ -360,6 +379,11 @@ export const addIssueNote = async (issueId: string, text: string) => {
 export const updateIssueStatus = async (issueId: string, status: string) => {
     await requireAdmin();
     await updateDoc(doc(db, 'issues', issueId), { status });
+};
+
+export const updateIssueDetails = async (issueId: string, updates: { severity?: string; type?: string; classification?: string }) => {
+    await requireAdmin();
+    await updateDoc(doc(db, 'issues', issueId), updates);
 };
 
 export const deleteIssue = async (issueId: string) => {

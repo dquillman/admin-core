@@ -18,11 +18,15 @@ import {
 import { useAuth } from '../hooks/useAuth';
 import { AppSelector } from './AppSelector';
 import { clsx, type ClassValue } from 'clsx';
+import { ADMIN_CORE_VERSION } from '../config';
 import { twMerge } from 'tailwind-merge';
 
 function cn(...inputs: ClassValue[]) {
     return twMerge(clsx(inputs));
 }
+
+
+
 
 const Sidebar: React.FC = () => {
     const { user, logout } = useAuth();
@@ -32,6 +36,7 @@ const Sidebar: React.FC = () => {
         { to: '/activity-2112', icon: Activity, label: '2112 Activity' },
         { to: '/users', icon: Users, label: 'Users' },
         { to: '/issues', icon: AlertCircle, label: 'Issues' },
+        { to: '/broadcast', icon: Megaphone, label: 'Broadcast' },
         { to: '/tester-activity', icon: Activity, label: 'Tester Activity' },
         { to: '/plans', icon: CreditCard, label: 'Plans & Trials' },
         { to: '/sources', icon: Globe, label: 'Sources' },
@@ -71,6 +76,14 @@ const Sidebar: React.FC = () => {
                     >
                         <item.icon className="w-5 h-5 shrink-0" />
                         <span className="font-medium">{item.label}</span>
+                        {(item.to === '/testers' || item.to === '/tester-activity') && (
+                            <span
+                                className="ml-auto text-[10px] bg-blue-500/10 text-blue-400 border border-blue-500/20 px-1.5 py-0.5 rounded-full font-mono uppercase cursor-help"
+                                title="This area is in beta. Features may change during testing."
+                            >
+                                Beta
+                            </span>
+                        )}
                     </NavLink>
                 ))}
             </nav>
@@ -104,7 +117,7 @@ const Sidebar: React.FC = () => {
                     <span className="font-medium">Sign Out</span>
                 </button>
                 <div className="mt-4 text-center">
-                    <span className="text-xs text-slate-600 font-mono">v0.2.7</span>
+                    <span className="text-xs text-slate-600 font-mono">Admin Core v{ADMIN_CORE_VERSION}</span>
                 </div>
             </div>
         </aside>

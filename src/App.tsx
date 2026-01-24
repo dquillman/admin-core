@@ -15,6 +15,7 @@ import Activity2112 from './pages/Activity2112';
 import ProtectedRoute from './components/ProtectedRoute';
 import Layout from './components/Layout';
 import Issues from './pages/Issues';
+import Broadcast from './pages/Broadcast';
 
 // Placeholder components for pages we haven't built yet
 const Placeholder = ({ title }: { title: string }) => (
@@ -44,6 +45,7 @@ function App() {
           <Route path="/plans" element={<Plans />} />
           <Route path="/sources" element={<Sources />} />
           <Route path="/issues" element={<Issues />} />
+          <Route path="/broadcast" element={<Broadcast />} />
           <Route path="/tester-activity" element={<TesterActivity />} />
           <Route path="/marketing-assets" element={<MarketingAssets />} />
           <Route path="/marketing/leads" element={<LeadsPage />} />

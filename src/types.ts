@@ -139,7 +139,8 @@ export interface ReportedIssue {
     id: string;
     app: string;
     userId: string | null;
-    type: 'bug' | 'confusion' | 'feedback';
+    type: 'bug' | 'confusion' | 'feedback' | 'ux' | 'accessibility' | 'tutor-gap' | 'mobile';
+    severity?: 'S1' | 'S2' | 'S3' | 'S4';
     message: string; // Legacy or alternative
     description?: string; // Actual field from client
     url: string | null;
@@ -158,4 +159,5 @@ export interface ReportedIssue {
     attachmentUrl?: string | null;
     deleted?: boolean;
     updatedAt?: Timestamp;
+    classification?: 'blocking' | 'misleading' | 'trust' | 'cosmetic';
 }
