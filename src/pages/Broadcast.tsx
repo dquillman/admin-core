@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useAuth } from '../hooks/useAuth';
 import { db } from '../firebase';
-import { collection, getDocs, addDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, getDocs, addDoc, serverTimestamp, query, orderBy, limit } from 'firebase/firestore';
 import { AlertCircle, Users, CheckCircle, Mail, Save, RefreshCw } from 'lucide-react';
 
 const Broadcast = () => {
@@ -13,6 +13,25 @@ const Broadcast = () => {
     const [recipientCount, setRecipientCount] = useState<number | null>(null);
     const [isSaving, setIsSaving] = useState(false);
     const [result, setResult] = useState<{ success: boolean; message: string } | null>(null);
+    const [drafts, setDrafts] = useState<any[]>([]);
+
+    // Fetch Drafts
+    React.useEffect(() => {
+        const fetchDrafts = async () => {
+            try {
+                const q = query(
+                    collection(db, 'broadcast_drafts'),
+                    orderBy('createdAt', 'desc'),
+                    limit(20)
+                );
+                const snapshot = await getDocs(q);
+                setDrafts(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
+            } catch (err) {
+                console.error("Failed to fetch drafts", err);
+            }
+        };
+        fetchDrafts();
+    }, [result]); // Re-fetch when a new result (save) occurs
 
     // Fetch Audience Count (Client-Side Safe Mode)
     const checkAudienceSize = React.useCallback(async (aud: string) => {
@@ -216,6 +235,40 @@ const Broadcast = () => {
                         <p className="text-xs text-slate-500 mt-3 text-center">
                             Drafts are saved to the system but cannot be reopened yet.
                         </p>
+                    </div>
+
+                    {/* Saved Drafts List (Read-Only) */}
+                    <div className="bg-slate-900 border border-slate-800 p-4 rounded-lg space-y-3">
+                        <h3 className="text-sm font-semibold text-slate-300 flex items-center gap-2">
+                            <span className="w-2 h-2 rounded-full bg-slate-500"></span>
+                            Saved Drafts (Read-Only)
+                        </h3>
+
+                        <div className="space-y-2 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
+                            {drafts.length === 0 ? (
+                                <p className="text-xs text-slate-500 italic text-center py-4">No saved drafts yet.</p>
+                            ) : (
+                                drafts.map((draft) => (
+                                    <div
+                                        key={draft.id}
+                                        onClick={() => {
+                                            setSubject(draft.subject);
+                                            setMessage(draft.body);
+                                            setAudience(draft.audience as any);
+                                        }}
+                                        className="p-3 rounded bg-slate-950 border border-slate-800 hover:border-indigo-500/50 cursor-pointer transition-all group"
+                                    >
+                                        <p className="text-sm font-medium text-slate-300 truncate group-hover:text-indigo-300">
+                                            {draft.subject || '(No Subject)'}
+                                        </p>
+                                        <div className="flex items-center justify-between mt-2 text-[10px] text-slate-500">
+                                            <span>{draft.createdAt?.toDate?.()?.toLocaleDateString() || 'Just now'}</span>
+                                            <span className="truncate max-w-[100px]">{draft.creatorEmail}</span>
+                                        </div>
+                                    </div>
+                                ))
+                            )}
+                        </div>
                     </div>
 
                 </div>
