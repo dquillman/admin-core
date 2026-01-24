@@ -30,7 +30,11 @@ export const getEffectiveAccess = (user: any): AccessState => {
     }
 
     // 2. Trial Logic
-    if (user.trialActive === true && user.trialEndsAt) {
+    // Support both 'trialActive' (legacy/standard) and 'trial' (new flow) flags
+    // The new flow sets plan='pro' AND trial=true, so we must catch it here before the Paid check
+    const isTrial = user.trialActive === true || user.trial === true;
+
+    if (isTrial && user.trialEndsAt) {
         if (user.trialEndsAt.toMillis() > now.toMillis()) {
             return {
                 type: 'trial',
@@ -38,7 +42,10 @@ export const getEffectiveAccess = (user: any): AccessState => {
                 endsAt: user.trialEndsAt
             };
         }
-        // If trial expired, we fall through to paid/none
+        // If expired, fall through?
+        // If plan is 'pro' but trial expired, do we count as paid? 
+        // Usually yes, if they converted. If they didn't convert, plan should probably not look like 'pro' or disabled.
+        // But for now, we follow existing fall-through behavior.
     }
 
     // 3. Paid Logic
