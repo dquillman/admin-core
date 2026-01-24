@@ -1,35 +1,42 @@
-# AG_TASK: Issue Classification Filter
+# AG_TASK: Issues Export
 
-**Task:** Add client-side filtering and sorting by issue classification.
+**Task:** Add a read-only export function to the Issues page.
 
 ## 🔒 EXECUTION CONSTRAINTS
 
-* **Branch:** `feat/issue-classification-filter`
+* **Branch:** `feat/issues-json-export`
 * **Scope:** `src/pages/Issues.tsx` ONLY.
-* **Safety:** UI-only. NO Backend queries.
+* **Safety:** UI-only export. NO Backend changes.
 
 ## 🧩 REQUIREMENTS
 
-1. **Filter Controls**:
-    * Add a new dropdown next to the Severity/Type filters.
-    * Options: All, Blocking, Misleading, Trust, Cosmetic, Unclassified.
-    * State: `filterClassification`.
+1. **Export Button**:
+    * Add "Export Issues (JSON)" button to the toolbar (near filters).
+    * Style: Secondary/Outline button.
 
-2. **Filtering Logic**:
-    * Update `filteredIssues` useMemo.
-    * If `filterClassification` is set, only return issues matching `classification`.
-    * Handle "Unclassified" correctly (where `classification` is undefined/null).
+2. **Export Logic**:
+    * Target `issues` state (currently loaded issues).
+    * Map to schema:
+        * `id`
+        * `app`
+        * `summary` (from `message` or `description`)
+        * `severity`
+        * `classification`
+        * `status`
+        * `createdAt` (ISO string)
+        * `lastUpdated` (ISO string if available)
+        * `adminNotes` (from `notes` array)
 
-3. **Sorting Logic (Group by Risk)**:
-    * Add a new sort option: "Risk (Classification)".
-    * Order: Blocking > Misleading > Trust > Cosmetic > Unclassified.
+3. **File Generation**:
+    * `issues-export-YYYY-MM-DD.json`.
+    * Use `URL.createObjectURL` with a Blob.
 
 4. **Verify Build**:
     * Run `npm run build`.
 
 ## 📦 COMPLETION CRITERIA
 
-* Filters working.
-* Sorting working.
+* Button works.
+* File downloads.
 * Code committed.
 * Build passed.

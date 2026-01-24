@@ -12,7 +12,8 @@ import {
     Loader2,
     Filter,
     ArrowUpDown,
-    RefreshCw
+    RefreshCw,
+    Download
 } from 'lucide-react';
 
 const Issues: React.FC = () => {
@@ -144,6 +145,30 @@ const Issues: React.FC = () => {
         }
     };
 
+    const handleExport = () => {
+        const exportData = issues.map(i => ({
+            id: i.id,
+            app: i.app,
+            summary: i.message || i.description || 'No Description',
+            severity: i.severity || 'S3',
+            classification: i.classification || 'unclassified',
+            status: i.status || 'new',
+            createdAt: i.createdAt?.toDate?.()?.toISOString() || i.timestamp?.toDate?.()?.toISOString() || null,
+            lastUpdated: i.updatedAt?.toDate?.()?.toISOString() || null,
+            adminNotes: i.notes?.map(n => n.text) || []
+        }));
+
+        const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `issues-export-${new Date().toISOString().split('T')[0]}.json`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    };
+
     const getTypeColor = (type: string) => {
         switch (type) {
             case 'bug': return 'bg-red-500/10 text-red-500 border-red-500/20';
@@ -194,6 +219,15 @@ const Issues: React.FC = () => {
                         onChange={(e) => setSearchUser(e.target.value)}
                         className="bg-slate-900 border border-slate-700 text-slate-300 text-sm rounded-lg p-2.5 focus:ring-brand-500 focus:border-brand-500 w-64"
                     />
+
+                    <button
+                        onClick={handleExport}
+                        className="p-2 bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white rounded-lg transition-colors self-start md:self-center flex items-center gap-2"
+                        title="Export Issues (JSON)"
+                    >
+                        <Download className="w-5 h-5" />
+                        <span className="sr-only md:not-sr-only text-xs font-medium">Export</span>
+                    </button>
 
                     <button
                         onClick={fetchIssues}
