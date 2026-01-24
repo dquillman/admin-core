@@ -1,27 +1,29 @@
-# AG_TASK: Add Version Display to Sidebar
+# AG_TASK: Standardize Versioning Convention
 
-**Task:** Implement a strict UI-only change to display the application version in the Admin Core Sidebar.
+**Task:** Implement a single source of truth for the Admin Core version string.
 
 ## 🔒 EXECUTION CONSTRAINTS
 
-* **Branch:** `feat/sidebar-version`
-* **Scope:** `src/components/Sidebar.tsx` ONLY.
-* **Safety:** NO Functions, NO Auth, NO Email.
+* **Branch:** `feat/version-convention`
+* **Scope:** `src/config.ts` (NEW/UPDATE), `src/components/Sidebar.tsx`, `docs/conventions/versioning.md`.
+* **Safety:** UI/Config only. NO Functions.
 
 ## 🧩 REQUIREMENTS
 
-1. **Modify `Sidebar.tsx`**:
-    * Locate the bottom of the sidebar (after the navigation links).
-    * Add a footer section.
-    * Display text: `Admin Core v0.2.7` (Hardcoded is acceptable for this test, or read from `package.json` if safe/easy).
-    * Style: Text-slate-500, text-xs, padding.
+1. **Define Convention (Option A Selected)**:
+    * Create `src/config.ts` if it doesn't exist, or use `src/constants.ts` if appropriate.
+    * Export `export const ADMIN_CORE_VERSION = '0.3.0';` (Bumping version to signify convention change).
 
-2. **Verify Build**:
-    * Run `npm run build` to ensure no regression.
-    * Ensure no linter errors.
+2. **Update UI**:
+    * In `src/components/Sidebar.tsx`, import `ADMIN_CORE_VERSION`.
+    * Replace the hardcoded string from the previous task with this constant.
+
+3. **Document**:
+    * Create `docs/conventions/versioning.md`.
+    * Explain: "Update `src/config.ts` to change the version."
 
 ## 📦 COMPLETION CRITERIA
 
-* Branch created.
-* Code committed.
-* Build passed.
+* Version matches in config and UI.
+* Build passes `npm run build`.
+* Documentation created.

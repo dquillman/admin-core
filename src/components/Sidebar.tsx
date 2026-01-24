@@ -18,6 +18,7 @@ import {
 import { useAuth } from '../hooks/useAuth';
 import { AppSelector } from './AppSelector';
 import { clsx, type ClassValue } from 'clsx';
+import { ADMIN_CORE_VERSION } from '../config';
 import { twMerge } from 'tailwind-merge';
 
 function cn(...inputs: ClassValue[]) {
@@ -108,7 +109,7 @@ const Sidebar: React.FC = () => {
                     <span className="font-medium">Sign Out</span>
                 </button>
                 <div className="mt-4 text-center">
-                    <span className="text-xs text-slate-600 font-mono">Admin Core v0.2.7 (Verified)</span>
+                    <span className="text-xs text-slate-600 font-mono">Admin Core v{ADMIN_CORE_VERSION}</span>
                 </div>
             </div>
         </aside>
