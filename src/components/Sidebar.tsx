@@ -77,7 +77,10 @@ const Sidebar: React.FC = () => {
                         <item.icon className="w-5 h-5 shrink-0" />
                         <span className="font-medium">{item.label}</span>
                         {(item.to === '/testers' || item.to === '/tester-activity') && (
-                            <span className="ml-auto text-[10px] bg-blue-500/10 text-blue-400 border border-blue-500/20 px-1.5 py-0.5 rounded-full font-mono uppercase">
+                            <span
+                                className="ml-auto text-[10px] bg-blue-500/10 text-blue-400 border border-blue-500/20 px-1.5 py-0.5 rounded-full font-mono uppercase cursor-help"
+                                title="This area is in beta. Features may change during testing."
+                            >
                                 Beta
                             </span>
                         )}

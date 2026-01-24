@@ -1,20 +1,19 @@
-# AG_TASK: Factory Smoke Test (UI Change)
+# AG_TASK: Sidebar Beta Tooltip
 
-**Task:** Add a visual 'Beta' indicator to the 'Testers' navigation item in `Sidebar.tsx`.
+**Task:** Add a tooltip to the "Beta" label in the Admin Core Sidebar.
 
 ## 🔒 EXECUTION CONSTRAINTS
 
-* **Branch:** `feat/smoke-test-ui`
+* **Branch:** `feat/sidebar-tooltip`
 * **Scope:** `src/components/Sidebar.tsx` ONLY.
 * **Safety:** UI-only. NO Functions. NO Auth.
 
 ## 🧩 REQUIREMENTS
 
 1. **Modify `Sidebar.tsx`**:
-    * Find the navigation item configuration (array or list).
-    * Add a conditional render or a static badge for the `/testers` route item.
-    * IF the item is `/testers`, render a small `span` with text `Beta` (text-xs, bg-blue-100, text-blue-800, rounded-full, px-2).
-    * Ensure layout remains clean (flex-row).
+    * Locate the "Beta" span added in the previous task.
+    * Add a `title` attribute with the text: "This area is in beta. Features may change during testing."
+    * (Optionally verify if a custom Tooltip component is standard pattern, but default to `title` for zero-risk).
 
 2. **Verify Build**:
     * Run `npm run build`.
