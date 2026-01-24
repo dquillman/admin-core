@@ -381,7 +381,7 @@ export const updateIssueStatus = async (issueId: string, status: string) => {
     await updateDoc(doc(db, 'issues', issueId), { status });
 };
 
-export const updateIssueDetails = async (issueId: string, updates: { severity?: string; type?: string }) => {
+export const updateIssueDetails = async (issueId: string, updates: { severity?: string; type?: string; classification?: string }) => {
     await requireAdmin();
     await updateDoc(doc(db, 'issues', issueId), updates);
 };

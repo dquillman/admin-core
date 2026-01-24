@@ -29,7 +29,7 @@ const Issues: React.FC = () => {
     const [filterStatus, setFilterStatus] = useState<string>('all');
     const [filterSeverity, setFilterSeverity] = useState<string>('all');
     const [searchUser, setSearchUser] = useState<string>('');
-    const [sortOrder, setSortOrder] = useState<'newest' | 'oldest' | 'severity_desc' | 'severity_asc'>('newest');
+    const [sortOrder, setSortOrder] = useState<'newest' | 'oldest' | 'severity_desc' | 'severity_asc' | 'type_asc' | 'type_desc'>('newest');
 
     useEffect(() => {
         fetchIssues();
@@ -41,7 +41,7 @@ const Issues: React.FC = () => {
             if (typeof val.toDate === 'function') return val.toDate().toLocaleDateString();
             if (val instanceof Date) return val.toLocaleDateString();
             return String(val); // Fallback for strings/numbers
-        } catch (e) {
+        } catch {
             return 'Invalid Date';
         }
     };
@@ -93,6 +93,12 @@ const Issues: React.FC = () => {
                 const sA = sMap[a.severity || 'S3'] || 0;
                 const sB = sMap[b.severity || 'S3'] || 0;
                 return sortOrder === 'severity_desc' ? sB - sA : sA - sB;
+            }
+
+            if (sortOrder === 'type_asc' || sortOrder === 'type_desc') {
+                const typeA = a.type || '';
+                const typeB = b.type || '';
+                return sortOrder === 'type_asc' ? typeA.localeCompare(typeB) : typeB.localeCompare(typeA);
             }
 
             const dateA = getMillis(a);
@@ -248,23 +254,22 @@ const Issues: React.FC = () => {
 
                 <div className="hidden md:block w-px h-6 bg-slate-800 mx-2"></div>
 
-                {/* Sort Toggle */}
-                <button
-                    onClick={() => {
-                        const order = ['newest', 'oldest', 'severity_desc', 'severity_asc'];
-                        const next = order[(order.indexOf(sortOrder) + 1) % order.length] as any;
-                        setSortOrder(next);
-                    }}
-                    className="flex items-center gap-2 px-4 py-2 bg-slate-950 border border-slate-800 rounded-lg text-slate-300 hover:text-white hover:border-slate-700 transition-all text-sm w-full md:w-auto justify-center ml-auto md:ml-0"
-                >
-                    <ArrowUpDown className="w-4 h-4" />
-                    <span>
-                        {sortOrder === 'newest' && 'Newest First'}
-                        {sortOrder === 'oldest' && 'Oldest First'}
-                        {sortOrder === 'severity_desc' && 'Severity (High→Low)'}
-                        {sortOrder === 'severity_asc' && 'Severity (Low→High)'}
-                    </span>
-                </button>
+                {/* Sort Dropdown */}
+                <div className="flex items-center gap-2 w-full md:w-auto">
+                    <ArrowUpDown className="w-4 h-4 text-slate-500" />
+                    <select
+                        value={sortOrder}
+                        onChange={(e) => setSortOrder(e.target.value as typeof sortOrder)}
+                        className="bg-slate-950 border border-slate-800 text-slate-300 text-sm rounded-lg focus:ring-brand-500 focus:border-brand-500 block w-full p-2.5"
+                    >
+                        <option value="newest">Newest First</option>
+                        <option value="oldest">Oldest First</option>
+                        <option value="severity_desc">Severity (High → Low)</option>
+                        <option value="severity_asc">Severity (Low → High)</option>
+                        <option value="type_asc">Type (A → Z)</option>
+                        <option value="type_desc">Type (Z → A)</option>
+                    </select>
+                </div>
             </div>
 
             {filteredIssues.length === 0 ? (
@@ -439,164 +444,188 @@ const Issues: React.FC = () => {
                                         </select>
                                     </div>
                                     <div>
-                                        <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Edit Type</label>
+                                        <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Classification</label>
                                         <select
-                                            value={selectedIssue.type}
+                                            value={selectedIssue.classification || ''}
                                             onChange={async (e) => {
-                                                const newType = e.target.value;
-                                                // Optimistic
-                                                setSelectedIssue(prev => prev ? ({ ...prev, type: newType } as any) : null);
+                                                const newClass = e.target.value;
+                                                // Optimistic update
+                                                setSelectedIssue(prev => prev ? ({ ...prev, classification: newClass } as any) : null);
                                                 try {
-                                                    await updateIssueDetails(selectedIssue.id, { type: newType });
+                                                    await updateIssueDetails(selectedIssue.id, { classification: newClass });
                                                     fetchIssues();
                                                 } catch (err) {
-                                                    console.error("Failed to update type", err);
+                                                    console.error("Failed to update classification", err);
                                                 }
                                             }}
                                             className="mt-1 block w-full bg-slate-950 border border-slate-800 text-slate-300 text-sm rounded-lg p-1.5 focus:ring-brand-500 focus:border-brand-500"
                                         >
-                                            <option value="bug">Bug</option>
-                                            <option value="confusion">Confusion</option>
-                                            <option value="feedback">Feedback</option>
-                                            <option value="ux">UX</option>
-                                            <option value="accessibility">Accessibility</option>
-                                            <option value="tutor-gap">Tutor Gap</option>
-                                            <option value="mobile">Mobile</option>
+                                            <option value="">Unclassified</option>
+                                            <option value="blocking">Blocking</option>
+                                            <option value="misleading">Misleading</option>
+                                            <option value="trust">Trust</option>
+                                            <option value="cosmetic">Cosmetic</option>
                                         </select>
                                     </div>
                                 </div>
                                 <div>
-                                    <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Status</label>
+                                    <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Edit Type</label>
                                     <select
-                                        value={selectedIssue.status || 'new'}
+                                        value={selectedIssue.type}
                                         onChange={async (e) => {
-                                            const newStatus = e.target.value;
+                                            const newType = e.target.value;
+                                            // Optimistic
+                                            setSelectedIssue(prev => prev ? ({ ...prev, type: newType } as any) : null);
                                             try {
-                                                await updateIssueStatus(selectedIssue.id, newStatus);
-                                                setSelectedIssue(prev => prev ? ({ ...prev, status: newStatus }) : null);
-                                                fetchIssues(); // Refresh list
+                                                await updateIssueDetails(selectedIssue.id, { type: newType });
+                                                fetchIssues();
                                             } catch (err) {
-                                                console.error("Failed to update status", err);
+                                                console.error("Failed to update type", err);
                                             }
                                         }}
                                         className="mt-1 block w-full bg-slate-950 border border-slate-800 text-slate-300 text-sm rounded-lg p-1.5 focus:ring-brand-500 focus:border-brand-500"
                                     >
-                                        <option value="new">New</option>
-                                        <option value="working">Working</option>
-                                        <option value="fixed">Fixed</option>
-                                        <option value="released">Released</option>
-                                        <option value="closed">Closed</option>
+                                        <option value="bug">Bug</option>
+                                        <option value="confusion">Confusion</option>
+                                        <option value="feedback">Feedback</option>
+                                        <option value="ux">UX</option>
+                                        <option value="accessibility">Accessibility</option>
+                                        <option value="tutor-gap">Tutor Gap</option>
+                                        <option value="mobile">Mobile</option>
                                     </select>
                                 </div>
-                                <div>
-                                    <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">User ID</label>
-                                    <div className="mt-1 text-slate-300 font-mono text-sm">{selectedIssue.userId || 'Anonymous'}</div>
-                                </div>
-                                <div>
-                                    <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Email</label>
-                                    <div className="mt-1 text-slate-300">{selectedIssue.userEmail || 'N/A'}</div>
-                                </div>
                             </div>
-
-                            <div className="space-y-4">
-                                <div>
-                                    <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">App Version</label>
-                                    <div className="mt-1 text-slate-300 font-mono text-sm">{selectedIssue.version || 'Unknown'}</div>
-                                </div>
-                                <div>
-                                    <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Path</label>
-                                    <div className="mt-1 text-slate-300 font-mono text-sm">{selectedIssue.path || 'N/A'}</div>
-                                </div>
-                                <div>
-                                    <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Timestamp</label>
-                                    <div className="mt-1 text-slate-300">
-                                        {formatDate(selectedIssue.timestamp || selectedIssue.createdAt)}
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div>
-                            <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Description / Message</label>
-                            <div className="mt-2 p-4 bg-slate-950 rounded-xl border border-slate-800 text-slate-300 whitespace-pre-wrap">
-                                {selectedIssue.description || selectedIssue.message}
-                            </div>
-                        </div>
-
-                        {selectedIssue.url && (
                             <div>
-                                <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Context URL</label>
-                                <div className="mt-1">
-                                    <a href={selectedIssue.url} target="_blank" rel="noopener noreferrer" className="text-brand-400 hover:text-brand-300 break-all">
-                                        {selectedIssue.url}
-                                    </a>
-                                </div>
-                            </div>
-                        )}
-
-                        {selectedIssue.attachmentUrl && (
-                            <div>
-                                <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Attachment / Screenshot</label>
-                                <div className="mt-2">
-                                    <a href={selectedIssue.attachmentUrl} target="_blank" rel="noopener noreferrer" className="block relative group overflow-hidden rounded-xl border border-slate-800">
-                                        <img
-                                            src={selectedIssue.attachmentUrl}
-                                            alt="Issue Attachment"
-                                            className="w-full h-auto max-h-[300px] object-contain bg-slate-950"
-                                            onError={(e) => {
-                                                (e.target as HTMLImageElement).style.display = 'none';
-                                                (e.target as HTMLImageElement).parentElement!.innerHTML = `<span class="p-4 block text-slate-500 italic">Failed to load image (Click to open)</span>`;
-                                            }}
-                                        />
-                                        <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                                            <span className="text-white font-medium flex items-center gap-2">
-                                                <ExternalLink className="w-4 h-4" />
-                                                Open Original
-                                            </span>
-                                        </div>
-                                    </a>
-                                </div>
-                            </div>
-                        )}
-
-                        {/* Raw JSON Toggle for Debugging */}
-                        <div className="pt-4 border-t border-slate-800 flex justify-between items-center">
-                            <details>
-                                <summary className="text-xs text-slate-600 cursor-pointer hover:text-slate-400">View Raw JSON</summary>
-                                <pre className="mt-2 p-4 bg-slate-950 rounded-xl overflow-x-auto text-xs font-mono text-slate-500 w-full max-w-lg">
-                                    {JSON.stringify(selectedIssue, (key, value) => {
-                                        if (key === 'createdAt' || key === 'timestamp') return 'Timestamp(...)';
-                                        return value;
-                                    }, 2)}
-                                </pre>
-                            </details>
-
-                            <button
-                                type="button"
-                                onClick={async (e) => {
-                                    e.preventDefault();
-                                    e.stopPropagation();
-                                    console.log("Delete button clicked for issue:", selectedIssue.id);
-
-                                    if (window.confirm('Are you sure you want to delete this issue?')) {
+                                <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Status</label>
+                                <select
+                                    value={selectedIssue.status || 'new'}
+                                    onChange={async (e) => {
+                                        const newStatus = e.target.value;
                                         try {
-                                            console.log("Attempting delete...");
-                                            await deleteIssue(selectedIssue.id);
-                                            console.log("Delete successful");
-
-                                            setSelectedIssue(null);
-                                            fetchIssues();
-                                        } catch (err: any) {
-                                            console.error("Failed to delete", err);
-                                            alert(`Failed to delete issue: ${err.message || 'Unknown Error'}. Check console for details.`);
+                                            await updateIssueStatus(selectedIssue.id, newStatus);
+                                            setSelectedIssue(prev => prev ? ({ ...prev, status: newStatus }) : null);
+                                            fetchIssues(); // Refresh list
+                                        } catch (err) {
+                                            console.error("Failed to update status", err);
                                         }
-                                    }
-                                }}
-                                className="px-3 py-1.5 bg-red-500/10 hover:bg-red-500/20 text-red-500 text-xs font-bold uppercase tracking-wider rounded-lg border border-red-500/20 transition-colors cursor-pointer"
-                            >
-                                Delete Issue
-                            </button>
+                                    }}
+                                    className="mt-1 block w-full bg-slate-950 border border-slate-800 text-slate-300 text-sm rounded-lg p-1.5 focus:ring-brand-500 focus:border-brand-500"
+                                >
+                                    <option value="new">New</option>
+                                    <option value="working">Working</option>
+                                    <option value="fixed">Fixed</option>
+                                    <option value="released">Released</option>
+                                    <option value="closed">Closed</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">User ID</label>
+                                <div className="mt-1 text-slate-300 font-mono text-sm">{selectedIssue.userId || 'Anonymous'}</div>
+                            </div>
+                            <div>
+                                <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Email</label>
+                                <div className="mt-1 text-slate-300">{selectedIssue.userEmail || 'N/A'}</div>
+                            </div>
                         </div>
+
+                        <div className="space-y-4">
+                            <div>
+                                <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">App Version</label>
+                                <div className="mt-1 text-slate-300 font-mono text-sm">{selectedIssue.version || 'Unknown'}</div>
+                            </div>
+                            <div>
+                                <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Path</label>
+                                <div className="mt-1 text-slate-300 font-mono text-sm">{selectedIssue.path || 'N/A'}</div>
+                            </div>
+                            <div>
+                                <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Timestamp</label>
+                                <div className="mt-1 text-slate-300">
+                                    {formatDate(selectedIssue.timestamp || selectedIssue.createdAt)}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div>
+                        <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Description / Message</label>
+                        <div className="mt-2 p-4 bg-slate-950 rounded-xl border border-slate-800 text-slate-300 whitespace-pre-wrap">
+                            {selectedIssue.description || selectedIssue.message}
+                        </div>
+                    </div>
+
+                    {selectedIssue.url && (
+                        <div>
+                            <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Context URL</label>
+                            <div className="mt-1">
+                                <a href={selectedIssue.url} target="_blank" rel="noopener noreferrer" className="text-brand-400 hover:text-brand-300 break-all">
+                                    {selectedIssue.url}
+                                </a>
+                            </div>
+                        </div>
+                    )}
+
+                    {selectedIssue.attachmentUrl && (
+                        <div>
+                            <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Attachment / Screenshot</label>
+                            <div className="mt-2">
+                                <a href={selectedIssue.attachmentUrl} target="_blank" rel="noopener noreferrer" className="block relative group overflow-hidden rounded-xl border border-slate-800">
+                                    <img
+                                        src={selectedIssue.attachmentUrl}
+                                        alt="Issue Attachment"
+                                        className="w-full h-auto max-h-[300px] object-contain bg-slate-950"
+                                        onError={(e) => {
+                                            (e.target as HTMLImageElement).style.display = 'none';
+                                            (e.target as HTMLImageElement).parentElement!.innerHTML = `<span class="p-4 block text-slate-500 italic">Failed to load image (Click to open)</span>`;
+                                        }}
+                                    />
+                                    <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                                        <span className="text-white font-medium flex items-center gap-2">
+                                            <ExternalLink className="w-4 h-4" />
+                                            Open Original
+                                        </span>
+                                    </div>
+                                </a>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Raw JSON Toggle for Debugging */}
+                    <div className="pt-4 border-t border-slate-800 flex justify-between items-center">
+                        <details>
+                            <summary className="text-xs text-slate-600 cursor-pointer hover:text-slate-400">View Raw JSON</summary>
+                            <pre className="mt-2 p-4 bg-slate-950 rounded-xl overflow-x-auto text-xs font-mono text-slate-500 w-full max-w-lg">
+                                {JSON.stringify(selectedIssue, (key, value) => {
+                                    if (key === 'createdAt' || key === 'timestamp') return 'Timestamp(...)';
+                                    return value;
+                                }, 2)}
+                            </pre>
+                        </details>
+
+                        <button
+                            type="button"
+                            onClick={async (e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                console.log("Delete button clicked for issue:", selectedIssue.id);
+
+                                if (window.confirm('Are you sure you want to delete this issue?')) {
+                                    try {
+                                        console.log("Attempting delete...");
+                                        await deleteIssue(selectedIssue.id);
+                                        console.log("Delete successful");
+
+                                        setSelectedIssue(null);
+                                        fetchIssues();
+                                    } catch (err: any) {
+                                        console.error("Failed to delete", err);
+                                        alert(`Failed to delete issue: ${err.message || 'Unknown Error'}. Check console for details.`);
+                                    }
+                                }
+                            }}
+                            className="px-3 py-1.5 bg-red-500/10 hover:bg-red-500/20 text-red-500 text-xs font-bold uppercase tracking-wider rounded-lg border border-red-500/20 transition-colors cursor-pointer"
+                        >
+                            Delete Issue
+                        </button>
                     </div>
                 </div>
             )}

@@ -159,4 +159,5 @@ export interface ReportedIssue {
     attachmentUrl?: string | null;
     deleted?: boolean;
     updatedAt?: Timestamp;
+    classification?: 'blocking' | 'misleading' | 'trust' | 'cosmetic';
 }

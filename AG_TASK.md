@@ -1,32 +1,37 @@
-# AG_TASK: Broadcast Audit Visibility
+# AG_TASK: Issue Classification
 
-**Task:** Add creator and timestamp visibility to Broadcast drafts.
+**Task:** Add manual classification tags to the Issues page.
 
 ## 🔒 EXECUTION CONSTRAINTS
 
-* **Branch:** `feat/broadcast-audit-ui`
-* **Scope:** `src/pages/Broadcast.tsx` ONLY.
-* **Safety:** UI-only. NO Logic. NO Backend.
+* **Branch:** `feat/issue-classification`
+* **Scope:** `src/pages/Issues.tsx`, `src/types.ts` (if types exist there).
+* **Safety:** UI + DB Update (on existing doc). NO Functions.
 
 ## 🧩 REQUIREMENTS
 
-1. **Draft List Update**:
-    * Enhance the list item design.
-    * Show `creatorEmail` prominently (or 'Unknown').
-    * Show `createdAt` as readable date/time (e.g., `toLocaleDateString` + time).
+1. **Type Extension**:
+    * Update Issue interface to include `classification?: 'blocking' | 'misleading' | 'trust' | 'cosmetic'`.
 
-2. **Loaded Draft Context**:
-    * Add state: `loadedDraft` (stores metadata of the currently clicked draft).
-    * When a draft is clicked, set this state.
-    * Render a small info block above the Form (or inside the Drafts section header, or near the Subject line):
-        "Editing draft from [email] • Created [date]"
-    * Use subtle styling (text-slate-500, text-xs).
+2. **Detail View (Dropdown)**:
+    * Add a select/dropdown component to the issue details pane.
+    * Labels: Blocking, Misleading, Trust, Cosmetic.
+    * On change -> update the document in Firestore immediately (or as part of save if applicable).
 
-3. **Verify Build**:
+3. **List View (Badge)**:
+    * Render a colored badge for the classification.
+        * Blocking: Red
+        * Misleading: Orange
+        * Trust: Purple
+        * Cosmetic: Blue
+        * Unclassified: Gray (or valid to hide if minimal).
+
+4. **Verify Build**:
     * Run `npm run build`.
 
 ## 📦 COMPLETION CRITERIA
 
-* Audit info visible in list and on load.
+* Issues can be tagged.
+* Tags persist.
 * Code committed.
 * Build passed.
