@@ -1,29 +1,25 @@
-# AG_TASK: Standardize Versioning Convention
+# AG_TASK: Factory Smoke Test (UI Change)
 
-**Task:** Implement a single source of truth for the Admin Core version string.
+**Task:** Add a visual 'Beta' indicator to the 'Testers' navigation item in `Sidebar.tsx`.
 
 ## 🔒 EXECUTION CONSTRAINTS
 
-* **Branch:** `feat/version-convention`
-* **Scope:** `src/config.ts` (NEW/UPDATE), `src/components/Sidebar.tsx`, `docs/conventions/versioning.md`.
-* **Safety:** UI/Config only. NO Functions.
+* **Branch:** `feat/smoke-test-ui`
+* **Scope:** `src/components/Sidebar.tsx` ONLY.
+* **Safety:** UI-only. NO Functions. NO Auth.
 
 ## 🧩 REQUIREMENTS
 
-1. **Define Convention (Option A Selected)**:
-    * Create `src/config.ts` if it doesn't exist, or use `src/constants.ts` if appropriate.
-    * Export `export const ADMIN_CORE_VERSION = '0.3.0';` (Bumping version to signify convention change).
+1. **Modify `Sidebar.tsx`**:
+    * Find the navigation item configuration (array or list).
+    * Add a conditional render or a static badge for the `/testers` route item.
+    * IF the item is `/testers`, render a small `span` with text `Beta` (text-xs, bg-blue-100, text-blue-800, rounded-full, px-2).
+    * Ensure layout remains clean (flex-row).
 
-2. **Update UI**:
-    * In `src/components/Sidebar.tsx`, import `ADMIN_CORE_VERSION`.
-    * Replace the hardcoded string from the previous task with this constant.
-
-3. **Document**:
-    * Create `docs/conventions/versioning.md`.
-    * Explain: "Update `src/config.ts` to change the version."
+2. **Verify Build**:
+    * Run `npm run build`.
 
 ## 📦 COMPLETION CRITERIA
 
-* Version matches in config and UI.
-* Build passes `npm run build`.
-* Documentation created.
+* Code committed.
+* Build passed.
