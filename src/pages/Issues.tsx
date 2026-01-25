@@ -1,14 +1,15 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { getReportedIssues, addIssueNote, updateIssueStatus, deleteIssue, updateIssueDetails } from '../services/firestoreService';
+import { subscribeToReportedIssues, assignMissingIssueIds } from '../services/firestoreService';
 import type { ReportedIssue } from '../types';
+import { OperatorReviewPanel } from '../components/OperatorReviewPanel';
+import { IssueDetailModal } from '../components/IssueDetailModal';
 
 import {
     AlertCircle,
     Calendar,
     User,
     ExternalLink,
-    Plus,
-    X,
+
     Loader2,
     Filter,
     ArrowUpDown,
@@ -19,10 +20,10 @@ import {
 const Issues: React.FC = () => {
     const [issues, setIssues] = useState<ReportedIssue[]>([]);
     const [loading, setLoading] = useState(true);
-    const [isNoteModalOpen, setIsNoteModalOpen] = useState(false);
+    const [isReviewPanelOpen, setIsReviewPanelOpen] = useState(false);
     const [selectedIssue, setSelectedIssue] = useState<ReportedIssue | null>(null);
-    const [noteText, setNoteText] = useState('');
-    const [submittingNote, setSubmittingNote] = useState(false);
+
+    const [isAssigning, setIsAssigning] = useState(false);
 
     // Filter & Sort State
     const [filterApp, setFilterApp] = useState<string>('all');
@@ -31,11 +32,24 @@ const Issues: React.FC = () => {
     const [filterSeverity, setFilterSeverity] = useState<string>('all');
     const [searchUser, setSearchUser] = useState<string>('');
     const [filterClassification, setFilterClassification] = useState<string>('all');
-    const [sortOrder, setSortOrder] = useState<'newest' | 'oldest' | 'severity_desc' | 'severity_asc' | 'type_asc' | 'type_desc' | 'classification_risk'>('newest');
+    const [sortOrder, setSortOrder] = useState<'newest' | 'oldest' | 'issue_id_desc' | 'issue_id_asc' | 'severity_desc' | 'severity_asc' | 'type_asc' | 'type_desc' | 'classification_risk' | 'organized'>('newest');
 
     useEffect(() => {
-        fetchIssues();
+        setLoading(true);
+        const unsubscribe = subscribeToReportedIssues(100, (data) => {
+            setIssues(data);
+            setLoading(false);
+        });
+        return () => unsubscribe();
     }, []);
+
+    // Manual refresh is no longer strictly necessary but kept for other reasons if needed
+    const fetchIssues = async () => {
+        // Re-triggering loading state might look glitchy with realtime updates, 
+        // so we rely on the listener. 
+        // If a hard refresh is absolutely needed, we could re-mount or just log.
+        console.log("Realtime listener is active. Manual refresh ignored.");
+    };
 
     const formatDate = (val: any): string => {
         try {
@@ -46,13 +60,6 @@ const Issues: React.FC = () => {
         } catch {
             return 'Invalid Date';
         }
-    };
-
-    const fetchIssues = async () => {
-        setLoading(true);
-        const data = await getReportedIssues(100);
-        setIssues(data);
-        setLoading(false);
     };
 
     // Derived State: Unique Apps for Filter Dropdown
@@ -95,6 +102,70 @@ const Issues: React.FC = () => {
                 return 0;
             };
 
+            if (sortOrder === 'organized') {
+                // 1. Status Priority
+                const statusMap: Record<string, number> = {
+                    'new': 0, 'open': 0,
+                    'working': 1, 'in_progress': 1,
+                    'blocked': 2,
+                    'fixed': 3, 'resolved': 3,
+                    'released': 4,
+                    'closed': 5
+                };
+                const statA = statusMap[a.status || 'new'] ?? 99;
+                const statB = statusMap[b.status || 'new'] ?? 99;
+                if (statA !== statB) return statA - statB;
+
+                // 2. Severity Priority (Critical to Low)
+                const sevMap: Record<string, number> = { 'S1': 0, 'S2': 1, 'S3': 2, 'S4': 3 };
+                const sevA = sevMap[a.severity || 'S3'] ?? 2;
+                const sevB = sevMap[b.severity || 'S3'] ?? 2;
+                if (sevA !== sevB) return sevA - sevB;
+
+                // 3. Age (Older first)
+                const timeA = getMillis(a);
+                const timeB = getMillis(b);
+                if (timeA !== timeB) return timeA - timeB; // Ascending
+
+                // 4. Tie-breaker: ID
+                const getNumericId = (id: string, displayId?: string) => {
+                    if (displayId) {
+                        const match = displayId.match(/EC-(\d+)/);
+                        if (match) return parseInt(match[1], 10);
+                    }
+                    const matchId = id && id.match(/EC-(\d+)/);
+                    if (matchId) return parseInt(matchId[1], 10);
+                    return 0;
+                };
+                return getNumericId(a.id, a.displayId) - getNumericId(b.id, b.displayId);
+            }
+
+
+            if (sortOrder === 'issue_id_desc' || sortOrder === 'issue_id_asc') {
+                const getNumericId = (id: string, displayId?: string) => {
+                    // Try displayId first (e.g. "EC-123")
+                    if (displayId) {
+                        const match = displayId.match(/EC-(\d+)/);
+                        if (match) return parseInt(match[1], 10);
+                    }
+                    // Fallback to id if it follows the pattern (unlikely but safe)
+                    const matchId = id && id.match(/EC-(\d+)/);
+                    if (matchId) return parseInt(matchId[1], 10);
+
+                    return 0;
+                };
+
+                const idA = getNumericId(a.id, a.displayId);
+                const idB = getNumericId(b.id, b.displayId);
+
+                // Handling for 0 (Pending/Missing IDs) - Always push to bottom
+                if (idA === 0 && idB === 0) return 0; // Keep relative order (or by timestamp via stability)
+                if (idA === 0) return 1; // A is pending -> A goes last
+                if (idB === 0) return -1; // B is pending -> B goes last
+
+                return sortOrder === 'issue_id_desc' ? idB - idA : idA - idB;
+            }
+
             if (sortOrder === 'classification_risk') {
                 const cMap: Record<string, number> = { 'blocking': 5, 'misleading': 4, 'trust': 3, 'cosmetic': 2, 'unclassified': 1 };
                 const cA = cMap[a.classification || 'unclassified'] || 1;
@@ -123,25 +194,23 @@ const Issues: React.FC = () => {
         });
     }, [issues, filterApp, filterType, filterStatus, filterSeverity, filterClassification, searchUser, sortOrder]);
 
-    const handleAddNoteClick = (issue: ReportedIssue) => {
-        setSelectedIssue(issue);
-        setNoteText('');
-        setIsNoteModalOpen(true);
-    };
 
-    const submitNote = async () => {
-        if (!selectedIssue || !noteText.trim()) return;
 
-        setSubmittingNote(true);
+    const handleAssignIds = async () => {
+        setIsAssigning(true);
         try {
-            await addIssueNote(selectedIssue.id, noteText);
-            // Optimistic update or refetch
-            await fetchIssues();
-            setIsNoteModalOpen(false);
+            const count = await assignMissingIssueIds();
+            if (count > 0) {
+                console.log(`Assigned IDs to ${count} issues.`);
+                // No need to fetch, realtime listener will handle it
+            } else {
+                console.log("No missing IDs found.");
+            }
         } catch (error) {
-            console.error("Failed to add note", error);
+            console.error("Failed to assign IDs:", error);
+            alert("Failed to assign IDs. Check console.");
         } finally {
-            setSubmittingNote(false);
+            setIsAssigning(false);
         }
     };
 
@@ -193,6 +262,28 @@ const Issues: React.FC = () => {
         }
     };
 
+    const getStatusColor = (status: string) => {
+        switch (status) {
+            case 'new': return 'bg-brand-500/10 text-brand-400 border-brand-500/20';
+            case 'working': return 'bg-blue-500/10 text-blue-400 border-blue-500/20';
+            case 'fixed': return 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20';
+            case 'released': return 'bg-emerald-900/30 text-emerald-300 border-emerald-700/50';
+            case 'closed': return 'bg-slate-800 text-slate-500 border-slate-700';
+            default: return 'bg-slate-800 text-slate-400 border-slate-700';
+        }
+    };
+
+    const getClassificationColor = (cls?: string) => {
+        if (!cls || (cls as string) === 'unclassified') return 'bg-slate-800/50 text-slate-500 border-slate-700/50';
+        switch (cls) {
+            case 'blocking': return 'bg-red-500/10 text-red-500 border-red-500/20';
+            case 'misleading': return 'bg-orange-500/10 text-orange-500 border-orange-500/20';
+            case 'trust': return 'bg-pink-500/10 text-pink-500 border-pink-500/20';
+            case 'cosmetic': return 'bg-teal-500/10 text-teal-500 border-teal-500/20';
+            default: return 'bg-slate-800 text-slate-400';
+        }
+    };
+
     if (loading) {
         return (
             <div className="flex items-center justify-center min-h-[400px]">
@@ -227,6 +318,43 @@ const Issues: React.FC = () => {
                     >
                         <Download className="w-5 h-5" />
                         <span className="sr-only md:not-sr-only text-xs font-medium">Export</span>
+                    </button>
+
+                    <button
+                        onClick={() => setIsReviewPanelOpen(!isReviewPanelOpen)}
+                        className={`p-2 rounded-lg transition-colors flex items-center gap-2 ${isReviewPanelOpen
+                            ? 'bg-purple-900/50 text-purple-300 ring-2 ring-purple-500/50'
+                            : 'bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white'
+                            }`}
+                        title="Toggle Operator Review Mode"
+                    >
+                        <span className="text-lg">🧠</span>
+                        <span className="hidden md:inline text-xs font-medium">Operator Review</span>
+                    </button>
+
+                    <button
+                        onClick={() => setSortOrder('organized')}
+                        className={`p-2 rounded-lg transition-colors flex items-center gap-2 ${sortOrder === 'organized'
+                            ? 'bg-brand-500 text-white shadow-lg shadow-brand-500/30 ring-2 ring-brand-400'
+                            : 'bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white'
+                            }`}
+                        title="Organize by Priority (Status > Severity > Age)"
+                    >
+                        <Filter className="w-5 h-5" />
+                        <span className="hidden md:inline text-xs font-medium">Organize</span>
+                    </button>
+
+                    <button
+                        onClick={handleAssignIds}
+                        disabled={isAssigning || !issues.some(i => !i.displayId || i.displayId === 'ID_MISSING')}
+                        className={`p-2 rounded-lg transition-colors flex items-center gap-2 ${(isAssigning || !issues.some(i => !i.displayId || i.displayId === 'ID_MISSING'))
+                            ? 'bg-slate-800/50 text-slate-600 cursor-not-allowed'
+                            : 'bg-brand-600 hover:bg-brand-500 text-white shadow-lg shadow-brand-500/20'
+                            }`}
+                        title="Assign EC-### IDs to missing issues"
+                    >
+                        {isAssigning ? <Loader2 className="w-5 h-5 animate-spin" /> : <RefreshCw className="w-5 h-5 rotate-90" />}
+                        <span className="hidden md:inline text-xs font-medium">Assign IDs</span>
                     </button>
 
                     <button
@@ -327,11 +455,14 @@ const Issues: React.FC = () => {
                     >
                         <option value="newest">Newest First</option>
                         <option value="oldest">Oldest First</option>
+                        <option value="issue_id_desc">Issue ID (High-Low)</option>
+                        <option value="issue_id_asc">Issue ID (Low-High)</option>
                         <option value="severity_desc">Severity (High → Low)</option>
                         <option value="severity_asc">Severity (Low → High)</option>
                         <option value="classification_risk">Risk (Classification)</option>
                         <option value="type_asc">Type (A → Z)</option>
                         <option value="type_desc">Type (Z → A)</option>
+                        <option value="organized">Organized (Smart Sort)</option>
                     </select>
                 </div>
             </div>
@@ -351,13 +482,21 @@ const Issues: React.FC = () => {
                             <div className="flex flex-col md:flex-row gap-6">
                                 {/* Left: Meta */}
                                 <div className="w-full md:w-48 shrink-0 space-y-3">
-                                    <div className="flex gap-2">
+                                    <div className="flex gap-2 flex-wrap">
                                         <div className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${getTypeColor(issue.type)} capitalize`}>
                                             {issue.type}
                                         </div>
                                         <div className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${getSeverityColor(issue.severity)}`}>
                                             {issue.severity || 'S3'}
                                         </div>
+                                        <div className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${getStatusColor(issue.status || 'new')} capitalize`}>
+                                            {issue.status || 'new'}
+                                        </div>
+                                        {(issue.classification && (issue.classification as string) !== 'unclassified') && (
+                                            <div className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${getClassificationColor(issue.classification)} capitalize`}>
+                                                {issue.classification}
+                                            </div>
+                                        )}
                                     </div>
                                     <div className="flex items-center gap-2 text-slate-400 text-sm">
                                         <Calendar className="w-4 h-4" />
@@ -370,6 +509,13 @@ const Issues: React.FC = () => {
                                         <span className="truncate max-w-[150px]" title={issue.userId || 'Anonymous'}>
                                             {issue.userId ? issue.userId.slice(0, 8) + '...' : 'Anonymous'}
                                         </span>
+                                    </div>
+                                    <div className="text-xs text-brand-400 font-mono font-bold">
+                                        {(!issue.displayId || issue.displayId === 'ID_MISSING') ? (
+                                            <span className="text-slate-500 animate-pulse">Assigning ID...</span>
+                                        ) : (
+                                            issue.displayId
+                                        )}
                                     </div>
                                     <div className="text-xs text-slate-500 uppercase tracking-wider font-bold">
                                         {issue.app}
@@ -412,13 +558,7 @@ const Issues: React.FC = () => {
                                         >
                                             View Full Details
                                         </button>
-                                        <button
-                                            onClick={() => handleAddNoteClick(issue)}
-                                            className="inline-flex items-center gap-2 text-sm text-slate-500 hover:text-white transition-colors px-2"
-                                        >
-                                            <Plus className="w-4 h-4" />
-                                            Add Note
-                                        </button>
+
                                     </div>
                                 </div>
                             </div>
@@ -427,273 +567,22 @@ const Issues: React.FC = () => {
                 </div>
             )}
 
-            {/* Add Note Modal */}
-            {isNoteModalOpen && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
-                    <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-md p-6 space-y-4 shadow-xl">
-                        <div className="flex items-center justify-between">
-                            <h3 className="text-lg font-bold text-white">Add Note</h3>
-                            <button onClick={() => setIsNoteModalOpen(false)} className="text-slate-500 hover:text-white">
-                                <X className="w-5 h-5" />
-                            </button>
-                        </div>
-                        {/* ... existing note logic ... */}
-                        <div className="space-y-4">
-                            <div className="flex justify-between items-center mb-2">
-                                <button
-                                    onClick={() => setNoteText(prev => prev + (prev.length > 0 ? '\n\n' : '') + `OPERATOR NOTE:\nVerdict: \nSeverity: \nImpact: \nRecommendation: `)}
-                                    className="text-xs text-brand-400 hover:text-brand-300 font-medium"
-                                >
-                                    + Insert Operator Template
-                                </button>
-                            </div>
-                            <textarea
-                                value={noteText}
-                                onChange={(e) => setNoteText(e.target.value)}
-                                placeholder="Enter internal note..."
-                                className="w-full h-32 bg-slate-950 border border-slate-800 rounded-xl p-3 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 resize-none"
-                            />
-                            <div className="flex justify-end gap-3">
-                                <button onClick={() => setIsNoteModalOpen(false)} className="px-4 py-2 text-slate-400 hover:text-white font-medium">Cancel</button>
-                                <button onClick={submitNote} disabled={!noteText.trim() || submittingNote} className="px-4 py-2 bg-brand-600 hover:bg-brand-500 text-white rounded-lg font-medium disabled:opacity-50 flex items-center gap-2">
-                                    {submittingNote && <Loader2 className="w-4 h-4 animate-spin" />} Save Note
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            )}
+            <OperatorReviewPanel
+                isOpen={isReviewPanelOpen}
+                onClose={() => setIsReviewPanelOpen(false)}
+                issues={issues}
+                onSelectIssue={(issue) => setSelectedIssue(issue)}
+            />
+
+
 
             {/* View Details Modal */}
-            {selectedIssue && !isNoteModalOpen && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm" onClick={() => setSelectedIssue(null)}>
-                    <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto p-6 space-y-6 shadow-xl" onClick={e => e.stopPropagation()}>
-                        <div className="flex items-center justify-between border-b border-slate-800 pb-4">
-                            <h3 className="text-xl font-bold text-white">Issue Details</h3>
-                            <button onClick={() => setSelectedIssue(null)} className="text-slate-500 hover:text-white">
-                                <X className="w-6 h-6" />
-                            </button>
-                        </div>
-
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                            <div className="space-y-4">
-                                <div>
-                                    <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Type</label>
-                                    <div className={`mt-1 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${getTypeColor(selectedIssue.type)} capitalize`}>
-                                        {selectedIssue.type}
-                                    </div>
-                                </div>
-                                <div className="grid grid-cols-2 gap-2">
-                                    <div>
-                                        <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Severity</label>
-                                        <select
-                                            value={selectedIssue.severity || 'S3'}
-                                            onChange={async (e) => {
-                                                const newSev = e.target.value;
-                                                // Optimistic
-                                                setSelectedIssue(prev => prev ? ({ ...prev, severity: newSev } as any) : null);
-                                                try {
-                                                    await updateIssueDetails(selectedIssue.id, { severity: newSev });
-                                                    fetchIssues();
-                                                } catch (err) {
-                                                    console.error("Failed to update severity", err);
-                                                }
-                                            }}
-                                            className="mt-1 block w-full bg-slate-950 border border-slate-800 text-slate-300 text-sm rounded-lg p-1.5 focus:ring-brand-500 focus:border-brand-500"
-                                        >
-                                            <option value="S1">S1 (Critical)</option>
-                                            <option value="S2">S2 (High)</option>
-                                            <option value="S3">S3 (Medium)</option>
-                                            <option value="S4">S4 (Low)</option>
-                                        </select>
-                                    </div>
-                                    <div>
-                                        <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Classification</label>
-                                        <select
-                                            value={selectedIssue.classification || ''}
-                                            onChange={async (e) => {
-                                                const newClass = e.target.value;
-                                                // Optimistic update
-                                                setSelectedIssue(prev => prev ? ({ ...prev, classification: newClass } as any) : null);
-                                                try {
-                                                    await updateIssueDetails(selectedIssue.id, { classification: newClass });
-                                                    fetchIssues();
-                                                } catch (err) {
-                                                    console.error("Failed to update classification", err);
-                                                }
-                                            }}
-                                            className="mt-1 block w-full bg-slate-950 border border-slate-800 text-slate-300 text-sm rounded-lg p-1.5 focus:ring-brand-500 focus:border-brand-500"
-                                        >
-                                            <option value="">Unclassified</option>
-                                            <option value="blocking">Blocking</option>
-                                            <option value="misleading">Misleading</option>
-                                            <option value="trust">Trust</option>
-                                            <option value="cosmetic">Cosmetic</option>
-                                        </select>
-                                    </div>
-                                </div>
-                                <div>
-                                    <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Edit Type</label>
-                                    <select
-                                        value={selectedIssue.type}
-                                        onChange={async (e) => {
-                                            const newType = e.target.value;
-                                            // Optimistic
-                                            setSelectedIssue(prev => prev ? ({ ...prev, type: newType } as any) : null);
-                                            try {
-                                                await updateIssueDetails(selectedIssue.id, { type: newType });
-                                                fetchIssues();
-                                            } catch (err) {
-                                                console.error("Failed to update type", err);
-                                            }
-                                        }}
-                                        className="mt-1 block w-full bg-slate-950 border border-slate-800 text-slate-300 text-sm rounded-lg p-1.5 focus:ring-brand-500 focus:border-brand-500"
-                                    >
-                                        <option value="bug">Bug</option>
-                                        <option value="confusion">Confusion</option>
-                                        <option value="feedback">Feedback</option>
-                                        <option value="ux">UX</option>
-                                        <option value="accessibility">Accessibility</option>
-                                        <option value="tutor-gap">Tutor Gap</option>
-                                        <option value="mobile">Mobile</option>
-                                    </select>
-                                </div>
-                            </div>
-                            <div>
-                                <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Status</label>
-                                <select
-                                    value={selectedIssue.status || 'new'}
-                                    onChange={async (e) => {
-                                        const newStatus = e.target.value;
-                                        try {
-                                            await updateIssueStatus(selectedIssue.id, newStatus);
-                                            setSelectedIssue(prev => prev ? ({ ...prev, status: newStatus }) : null);
-                                            fetchIssues(); // Refresh list
-                                        } catch (err) {
-                                            console.error("Failed to update status", err);
-                                        }
-                                    }}
-                                    className="mt-1 block w-full bg-slate-950 border border-slate-800 text-slate-300 text-sm rounded-lg p-1.5 focus:ring-brand-500 focus:border-brand-500"
-                                >
-                                    <option value="new">New</option>
-                                    <option value="working">Working</option>
-                                    <option value="fixed">Fixed</option>
-                                    <option value="released">Released</option>
-                                    <option value="closed">Closed</option>
-                                </select>
-                            </div>
-                            <div>
-                                <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">User ID</label>
-                                <div className="mt-1 text-slate-300 font-mono text-sm">{selectedIssue.userId || 'Anonymous'}</div>
-                            </div>
-                            <div>
-                                <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Email</label>
-                                <div className="mt-1 text-slate-300">{selectedIssue.userEmail || 'N/A'}</div>
-                            </div>
-                        </div>
-
-                        <div className="space-y-4">
-                            <div>
-                                <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">App Version</label>
-                                <div className="mt-1 text-slate-300 font-mono text-sm">{selectedIssue.version || 'Unknown'}</div>
-                            </div>
-                            <div>
-                                <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Path</label>
-                                <div className="mt-1 text-slate-300 font-mono text-sm">{selectedIssue.path || 'N/A'}</div>
-                            </div>
-                            <div>
-                                <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Timestamp</label>
-                                <div className="mt-1 text-slate-300">
-                                    {formatDate(selectedIssue.timestamp || selectedIssue.createdAt)}
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div>
-                        <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Description / Message</label>
-                        <div className="mt-2 p-4 bg-slate-950 rounded-xl border border-slate-800 text-slate-300 whitespace-pre-wrap">
-                            {selectedIssue.description || selectedIssue.message}
-                        </div>
-                    </div>
-
-                    {selectedIssue.url && (
-                        <div>
-                            <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Context URL</label>
-                            <div className="mt-1">
-                                <a href={selectedIssue.url} target="_blank" rel="noopener noreferrer" className="text-brand-400 hover:text-brand-300 break-all">
-                                    {selectedIssue.url}
-                                </a>
-                            </div>
-                        </div>
-                    )}
-
-                    {selectedIssue.attachmentUrl && (
-                        <div>
-                            <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Attachment / Screenshot</label>
-                            <div className="mt-2">
-                                <a href={selectedIssue.attachmentUrl} target="_blank" rel="noopener noreferrer" className="block relative group overflow-hidden rounded-xl border border-slate-800">
-                                    <img
-                                        src={selectedIssue.attachmentUrl}
-                                        alt="Issue Attachment"
-                                        className="w-full h-auto max-h-[300px] object-contain bg-slate-950"
-                                        onError={(e) => {
-                                            (e.target as HTMLImageElement).style.display = 'none';
-                                            (e.target as HTMLImageElement).parentElement!.innerHTML = `<span class="p-4 block text-slate-500 italic">Failed to load image (Click to open)</span>`;
-                                        }}
-                                    />
-                                    <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                                        <span className="text-white font-medium flex items-center gap-2">
-                                            <ExternalLink className="w-4 h-4" />
-                                            Open Original
-                                        </span>
-                                    </div>
-                                </a>
-                            </div>
-                        </div>
-                    )}
-
-                    {/* Raw JSON Toggle for Debugging */}
-                    <div className="pt-4 border-t border-slate-800 flex justify-between items-center">
-                        <details>
-                            <summary className="text-xs text-slate-600 cursor-pointer hover:text-slate-400">View Raw JSON</summary>
-                            <pre className="mt-2 p-4 bg-slate-950 rounded-xl overflow-x-auto text-xs font-mono text-slate-500 w-full max-w-lg">
-                                {JSON.stringify(selectedIssue, (key, value) => {
-                                    if (key === 'createdAt' || key === 'timestamp') return 'Timestamp(...)';
-                                    return value;
-                                }, 2)}
-                            </pre>
-                        </details>
-
-                        <button
-                            type="button"
-                            onClick={async (e) => {
-                                e.preventDefault();
-                                e.stopPropagation();
-                                console.log("Delete button clicked for issue:", selectedIssue.id);
-
-                                if (window.confirm('Are you sure you want to delete this issue?')) {
-                                    try {
-                                        console.log("Attempting delete...");
-                                        await deleteIssue(selectedIssue.id);
-                                        console.log("Delete successful");
-
-                                        setSelectedIssue(null);
-                                        fetchIssues();
-                                    } catch (err: any) {
-                                        console.error("Failed to delete", err);
-                                        alert(`Failed to delete issue: ${err.message || 'Unknown Error'}. Check console for details.`);
-                                    }
-                                }
-                            }}
-                            className="px-3 py-1.5 bg-red-500/10 hover:bg-red-500/20 text-red-500 text-xs font-bold uppercase tracking-wider rounded-lg border border-red-500/20 transition-colors cursor-pointer"
-                        >
-                            Delete Issue
-                        </button>
-                    </div>
-                </div>
-            )}
-        </div>
+            <IssueDetailModal
+                issue={selectedIssue}
+                onClose={() => setSelectedIssue(null)}
+                onUpdate={fetchIssues}
+            />
+        </div >
     );
 };
 

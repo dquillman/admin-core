@@ -137,6 +137,7 @@ export interface IssueNote {
 
 export interface ReportedIssue {
     id: string;
+    displayId?: string; // Friendly ID (e.g. EC-123). Optional initially.
     app: string;
     userId: string | null;
     type: 'bug' | 'confusion' | 'feedback' | 'ux' | 'accessibility' | 'tutor-gap' | 'mobile';
@@ -160,4 +161,16 @@ export interface ReportedIssue {
     deleted?: boolean;
     updatedAt?: Timestamp;
     classification?: 'blocking' | 'misleading' | 'trust' | 'cosmetic';
+
+    // Category Governance
+    suggestedCategory?: string; // Optional user suggestion if type is 'Uncategorized'
+}
+
+export interface IssueCategory {
+    id: string; // immutable slug (e.g. 'bug', 'ux')
+    label: string; // Display name
+    description: string;
+    status: 'active' | 'deprecated';
+    createdBy: 'system' | 'admin';
+    createdAt: Timestamp;
 }

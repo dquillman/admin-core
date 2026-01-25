@@ -186,3 +186,62 @@ export const autoExpireTesterPro = functions.pubsub.schedule("every 6 hours").on
     await auditBatch.commit();
     return null;
 });
+
+/**
+ * Trigger: On Issue Creation
+ * Auto-assigns a readable displayId (EC-###) if missing.
+ */
+export const onIssueCreated = functions.firestore.document('issues/{issueId}').onCreate(async (snap, context) => {
+    const newData = snap.data();
+
+    // 1. If displayId already exists, do nothing
+    if (newData.displayId && String(newData.displayId).startsWith('EC-')) {
+        return null;
+    }
+
+    try {
+        // 2. Find the highest existing ID
+        // Strategy: Query recent issues (last 50) to find the max numeric portion.
+        // We rely on 'timestamp' (client) or 'createdAt' (admin) for recency.
+        const recentSnap = await db.collection('issues')
+            .orderBy('timestamp', 'desc')
+            .limit(50)
+            .get();
+
+        let maxId = 0;
+
+        recentSnap.docs.forEach(doc => {
+            const data = doc.data();
+            // Check both displayId and legacy issueId
+            const idStr = data.displayId || data.issueId;
+            if (idStr && typeof idStr === 'string') {
+                const match = idStr.match(/EC-(\d+)/);
+                if (match) {
+                    const num = parseInt(match[1], 10);
+                    if (!isNaN(num) && num > maxId) {
+                        maxId = num;
+                    }
+                }
+            }
+        });
+
+        // 3. Increment
+        const nextId = maxId + 1;
+        const newDisplayId = `EC-${nextId}`;
+
+        // 4. Update the document
+        await snap.ref.set({
+            displayId: newDisplayId,
+            issueId: newDisplayId, // Keep legacy field in sync for now, just in case
+            timestamp: admin.firestore.FieldValue.serverTimestamp(), // Ensure query listeners fire on sort field update
+            updatedAt: admin.firestore.FieldValue.serverTimestamp()
+        }, { merge: true });
+
+        console.log(`Assigned ${newDisplayId} to issue ${context.params.issueId}`);
+        return null;
+
+    } catch (error) {
+        console.error("Failed to auto-assign issue ID", error);
+        return null;
+    }
+});

@@ -138,7 +138,13 @@ service cloud.firestore {
      * - Users can read their own issues (fixes snapshot listener).
      * - Admins can read/manage all.
      */
+    match /issue_categories/{categoryId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
     /**
+     * Public Bug Reporting
      * Public Bug Reporting
      * - Handle "issues" collection (Real Client).
      */

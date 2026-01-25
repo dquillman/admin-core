@@ -11,11 +11,12 @@ import LeadsPage from './pages/Marketing/Leads';
 import OutreachPage from './pages/Marketing/Outreach';
 import Funnel from './pages/Funnel';
 import TutorImpact from './pages/TutorImpact';
-import Activity2112 from './pages/Activity2112';
+import GodsView from './pages/GodsView';
 import ProtectedRoute from './components/ProtectedRoute';
 import Layout from './components/Layout';
 import Issues from './pages/Issues';
 import Broadcast from './pages/Broadcast';
+import CategoryRegistry from './pages/CategoryRegistry';
 
 // Placeholder components for pages we haven't built yet
 const Placeholder = ({ title }: { title: string }) => (
@@ -52,7 +53,8 @@ function App() {
           <Route path="/marketing/outreach" element={<OutreachPage />} />
           <Route path="/funnel" element={<Funnel />} />
           <Route path="/tutor-impact" element={<TutorImpact />} />
-          <Route path="/activity-2112" element={<Activity2112 />} />
+          <Route path="/gods-view" element={<GodsView />} />
+          <Route path="/categories" element={<CategoryRegistry />} />
           <Route path="/settings" element={<Placeholder title="Settings" />} />
         </Route>
 

@@ -12,11 +12,12 @@ import {
     deleteDoc,
     serverTimestamp,
     setDoc,
-    arrayUnion
+    arrayUnion,
+    onSnapshot
 } from 'firebase/firestore';
 import { db, auth } from '../firebase';
 import { safeGetDocs, safeGetDoc, safeGetCount } from '../utils/firestoreSafe';
-import type { User, TesterStats, ReportedIssue, IssueNote } from '../types';
+import type { User, TesterStats, ReportedIssue, IssueNote, IssueCategory } from '../types';
 
 // GLOBAL KILL SWITCH - STRICT NO AGGREGATION
 export const CLIENT_STATS_ENABLED = true; // Enabled but only for safe value reading
@@ -352,7 +353,21 @@ export const getReportedIssues = async (limitCount: number = 100): Promise<Repor
         // Client uses 'timestamp', Admin uses 'createdAt'. Order by timestamp for client issues.
         const q = query(issuesCol, orderBy('timestamp', 'desc'), limit(limitCount));
         const snap = await safeGetDocs(q, { fallback: [], context: 'Issues', description: 'Get Issues' });
-        return snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as ReportedIssue));
+        return snap.docs.map(doc => {
+            const data = doc.data();
+            // Robust ID resolution: Try displayId (canonical), then issue_id/issueId (legacy), then doc.id
+            let finalDisplayId = data.displayId || data.issueId || data.issue_id;
+
+            if (!finalDisplayId && doc.id.startsWith('EC-')) {
+                finalDisplayId = doc.id;
+            }
+
+            return {
+                id: doc.id,
+                ...data,
+                displayId: finalDisplayId // Pass raw value (undefined if missing)
+            } as ReportedIssue;
+        });
     } catch (error) {
         console.error("Failed to fetch reported issues:", error);
         return [];
@@ -390,4 +405,162 @@ export const deleteIssue = async (issueId: string) => {
     await requireAdmin();
     // Soft delete to allow recovery if needed, and to maintain history
     await updateDoc(doc(db, 'issues', issueId), { deleted: true });
+};
+
+export const subscribeToReportedIssues = (limitCount: number = 100, onData: (issues: ReportedIssue[]) => void): (() => void) => {
+    const issuesCol = collection(db, 'issues');
+    const q = query(issuesCol, orderBy('timestamp', 'desc'), limit(limitCount));
+
+    return onSnapshot(q, (snapshot) => {
+        const issues = snapshot.docs.map(doc => {
+            const data = doc.data();
+            let finalDisplayId = data.displayId || data.issueId || data.issue_id;
+
+            if (!finalDisplayId && doc.id.startsWith('EC-')) {
+                finalDisplayId = doc.id;
+            }
+
+            return {
+                id: doc.id,
+                ...data,
+                displayId: finalDisplayId
+            } as ReportedIssue;
+        });
+        onData(issues);
+    }, (error) => {
+        console.error("Issues subscription error:", error);
+    });
+};
+
+export const assignMissingIssueIds = async (): Promise<number> => {
+    await requireAdmin();
+    // 1. Fetch recent issues to find max ID and missing IDs
+    const issuesCol = collection(db, 'issues');
+    // Get enough to cover recent additions. 100 is standard view, 200 for safety.
+    const q = query(issuesCol, orderBy('timestamp', 'desc'), limit(200));
+    const snap = await safeGetDocs(q, { fallback: [], context: 'Issues', description: 'Assign IDs Check' });
+
+    let maxId = 0;
+    const missingDocs: any[] = [];
+
+    snap.docs.forEach(doc => {
+        const data = doc.data();
+        const idStr = data.displayId || data.issueId || data.issue_id;
+
+        if (idStr && typeof idStr === 'string') {
+            const match = idStr.match(/EC-(\d+)/);
+            if (match) {
+                const num = parseInt(match[1], 10);
+                if (!isNaN(num) && num > maxId) {
+                    maxId = num;
+                }
+            }
+        }
+
+        if (!idStr && !doc.id.startsWith('EC-')) {
+            // Found a candidate for assignment
+            missingDocs.push(doc);
+        }
+    });
+
+    if (missingDocs.length === 0) return 0;
+
+    // 2. Assign IDs sequentially
+    let nextId = maxId + 1;
+    let updatedCount = 0;
+
+    // Process sequentially to ensure order (though in batch it's simultaneous, logical assignment matters)
+    // We can use a batch for atomicity (up to 500 ops)
+    const batch = (await import('firebase/firestore')).writeBatch(db);
+
+    for (const docSnap of missingDocs) {
+        const newDisplayId = `EC-${nextId}`;
+        batch.update(docSnap.ref, {
+            displayId: newDisplayId,
+            issueId: newDisplayId,
+            timestamp: serverTimestamp(),
+            updatedAt: serverTimestamp()
+        });
+        nextId++;
+        updatedCount++;
+    }
+
+    await batch.commit();
+    return updatedCount;
+};
+
+// --- Issue Category Registry ---
+export const getIssueCategories = async (): Promise<IssueCategory[]> => {
+    const catsCol = collection(db, 'issue_categories');
+    const snap = await safeGetDocs(query(catsCol, orderBy('label', 'asc')), { fallback: [], context: 'Categories', description: 'Get Categories' });
+    return snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as IssueCategory));
+};
+
+export const subscribeToIssueCategories = (onData: (categories: IssueCategory[]) => void): (() => void) => {
+    const catsCol = collection(db, 'issue_categories');
+    return onSnapshot(query(catsCol, orderBy('label', 'asc')), (snapshot) => {
+        const categories = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as IssueCategory));
+        onData(categories);
+    });
+};
+
+export const addIssueCategory = async (cat: Omit<IssueCategory, 'createdAt' | 'createdBy'>) => {
+    await requireAdmin();
+    const user = auth.currentUser;
+    // Slugify the ID if not provided, or ensure the provided ID is safe
+    const safeId = cat.id.toLowerCase().replace(/[^a-z0-9-_]/g, '-');
+
+    // Check if exists
+    const docRef = doc(db, 'issue_categories', safeId);
+    const exists = (await getDoc(docRef)).exists();
+    if (exists) throw new Error("Category ID already exists");
+
+    await setDoc(docRef, {
+        ...cat,
+        id: safeId,
+        createdAt: serverTimestamp(),
+        createdBy: user?.uid === 'system' ? 'system' : 'admin'
+    });
+};
+
+export const updateIssueCategory = async (id: string, updates: Partial<IssueCategory>) => {
+    await requireAdmin();
+    // Prevent ID updates
+    const { id: _, ...safeUpdates } = updates;
+    await updateDoc(doc(db, 'issue_categories', id), safeUpdates);
+};
+
+export const seedDefaultCategories = async () => {
+    await requireAdmin();
+    const defaults = [
+        { id: 'auth_account_access', label: 'Authentication & Account Access', description: 'Issues related to login, signup, passwords, and sessions.' },
+        { id: 'user_interface_ux', label: 'User Interface / UX', description: 'Visual bugs, layout issues, typos, and confusing interactions.' },
+        { id: 'quiz_assessment_logic', label: 'Quiz & Assessment Logic', description: 'Problems with question/answer logic, scoring, or exam flows.' },
+        { id: 'tutor_ai_output', label: 'Tutor / AI Output', description: 'Incorrect, hallucinated, or unhelpful AI responses.' },
+        { id: 'performance_stability', label: 'Performance & Stability', description: 'Crashes, slow loading, timeouts, or network errors.' },
+        { id: 'billing_subscription', label: 'Billing & Subscription', description: 'Payments, plan upgrades/downgrades, and receipt issues.' }
+    ];
+
+    const batch = (await import('firebase/firestore')).writeBatch(db);
+    let count = 0;
+
+    for (const def of defaults) {
+        const docRef = doc(db, 'issue_categories', def.id);
+        const snap = await getDoc(docRef);
+
+        if (!snap.exists()) {
+            batch.set(docRef, {
+                ...def,
+                status: 'active',
+                createdAt: serverTimestamp(),
+                createdBy: 'system'
+            });
+            count++;
+        }
+    }
+
+    if (count > 0) {
+        await batch.commit();
+    }
+    return count;
 };

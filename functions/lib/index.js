@@ -33,7 +33,7 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.autoExpireTesterPro = exports.disableUser = exports.revokeTesterPro = exports.grantTesterPro = void 0;
+exports.onIssueCreated = exports.autoExpireTesterPro = exports.disableUser = exports.revokeTesterPro = exports.grantTesterPro = void 0;
 const functions = __importStar(require("firebase-functions"));
 const admin = __importStar(require("firebase-admin"));
 admin.initializeApp();
@@ -49,7 +49,7 @@ async function assertAdmin(context) {
 }
 async function updateAdminStats(updates) {
     try {
-        const statsRef = db.doc("stats/admin_core/summary");
+        const statsRef = db.doc("stats/admin_core");
         const updateData = {
             lastUpdated: admin.firestore.FieldValue.serverTimestamp()
         };
@@ -179,5 +179,44 @@ exports.autoExpireTesterPro = functions.pubsub.schedule("every 6 hours").onRun(a
     await batch.commit();
     await auditBatch.commit();
     return null;
+});
+exports.onIssueCreated = functions.firestore.document('issues/{issueId}').onCreate(async (snap, context) => {
+    const newData = snap.data();
+    if (newData.displayId && String(newData.displayId).startsWith('EC-')) {
+        return null;
+    }
+    try {
+        const recentSnap = await db.collection('issues')
+            .orderBy('timestamp', 'desc')
+            .limit(50)
+            .get();
+        let maxId = 0;
+        recentSnap.docs.forEach(doc => {
+            const data = doc.data();
+            const idStr = data.displayId || data.issueId;
+            if (idStr && typeof idStr === 'string') {
+                const match = idStr.match(/EC-(\d+)/);
+                if (match) {
+                    const num = parseInt(match[1], 10);
+                    if (!isNaN(num) && num > maxId) {
+                        maxId = num;
+                    }
+                }
+            }
+        });
+        const nextId = maxId + 1;
+        const newDisplayId = `EC-${nextId}`;
+        await snap.ref.set({
+            displayId: newDisplayId,
+            issueId: newDisplayId,
+            updatedAt: admin.firestore.FieldValue.serverTimestamp()
+        }, { merge: true });
+        console.log(`Assigned ${newDisplayId} to issue ${context.params.issueId}`);
+        return null;
+    }
+    catch (error) {
+        console.error("Failed to auto-assign issue ID", error);
+        return null;
+    }
 });
 //# sourceMappingURL=index.js.map
