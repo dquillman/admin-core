@@ -118,3 +118,74 @@ export const analyzeIssue = (issue: ReportedIssue, validCategories: IssueCategor
         reasons: ['No determining factors found. Defaulting to available option.']
     };
 };
+
+export interface SeverityResult {
+    severity: 'S1' | 'S2' | 'S3' | 'S4';
+    classification: 'blocking' | 'misleading' | 'trust' | 'cosmetic';
+    confidence: number;
+    reasons: string[];
+}
+
+export const analyzeSeverity = (issue: ReportedIssue): SeverityResult => {
+    const text = `${issue.message || ''} ${issue.description || ''}`.toLowerCase();
+    const reasons: string[] = [];
+    let score = 0; // Higher = More Severe
+
+    // 1. Critical Keywords (Crash, Block, Security)
+    if (text.match(/crash|white screen|blank|locked out|security|leak|urgent|down/)) {
+        score += 40;
+        reasons.push('Contains critical severity keywords (crash/security)');
+    }
+
+    // 2. High Priority Keywords (Fail, Error, Broken, Payment)
+    if (text.match(/error|fail|broken|payment|charge|subscription|wrong|calc|incorrect/)) {
+        score += 20;
+        reasons.push('Contains functional failure keywords');
+    }
+
+    // 3. User Signal (Long description usually means more complex/important)
+    if (text.length > 100) {
+        score += 5;
+        // reasons.push('Detailed description');
+    }
+
+    // 4. Heuristic Classification
+    // S1: Score > 35
+    // S2: Score > 15
+    // S3: Default
+    // S4: "typo", "color", "icon" -> Cosmetic
+
+    if (text.match(/typo|color|icon|align|spacing|cosmetic|text|font/)) {
+        return {
+            severity: 'S4',
+            classification: 'cosmetic',
+            confidence: 90,
+            reasons: ['explicit cosmetic keywords']
+        };
+    }
+
+    if (score >= 35) {
+        return {
+            severity: 'S1',
+            classification: 'blocking',
+            confidence: 85,
+            reasons
+        };
+    }
+
+    if (score >= 15) {
+        return {
+            severity: 'S2',
+            classification: 'misleading', // "Functional" but labeled misleading/trust often map here
+            confidence: 70,
+            reasons
+        };
+    }
+
+    return {
+        severity: 'S3',
+        classification: 'trust', // Default bucket for improvements
+        confidence: 50,
+        reasons: ['Standard issue profile']
+    };
+};

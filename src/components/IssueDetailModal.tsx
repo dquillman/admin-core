@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, ExternalLink, Loader2, Save, Trash2, ShieldCheck } from 'lucide-react';
+import { X, ExternalLink, Loader2, Save, Trash2, ShieldCheck, Lightbulb } from 'lucide-react';
 import type { ReportedIssue } from '../types';
 import { updateIssueStatus, updateIssueDetails, addIssueNote, deleteIssue, getIssueCategories } from '../services/firestoreService';
 import { useAuth } from '../hooks/useAuth';
@@ -246,6 +246,32 @@ export const IssueDetailModal: React.FC<IssueDetailModalProps> = ({ issue, onClo
 
                         {/* Classification */}
                         <div>
+
+                            {/* AI Severity Control */}
+                            <button
+                                type="button"
+                                onClick={async () => {
+                                    const { analyzeSeverity } = await import('../services/suggestionService');
+                                    const result = analyzeSeverity(localIssue);
+                                    if (window.confirm(
+                                        `AI Recommendation:\n\n` +
+                                        `Severity: ${result.severity}\n` +
+                                        `Classification: ${result.classification}\n\n` +
+                                        `Confidence: ${result.confidence}%\n` +
+                                        `Reason: ${result.reasons.join(', ')}\n\n` +
+                                        `Apply this classification?`
+                                    )) {
+                                        handleUpdate({
+                                            severity: result.severity,
+                                            classification: result.classification
+                                        });
+                                    }
+                                }}
+                                className="mb-2 w-full text-xs flex items-center justify-center gap-2 py-1.5 bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 border border-indigo-500/30 rounded transition-colors"
+                            >
+                                <Lightbulb className="w-3 h-3" /> Evaluate Severity (AI)
+                            </button>
+
                             <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">
                                 Classification <span className="text-red-500">*</span>
                             </label>

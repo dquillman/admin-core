@@ -38,6 +38,26 @@ export const OperatorReviewPanel: React.FC<OperatorReviewPanelProps> = ({ isOpen
             const age = now - createdAt;
             const isUserOriginated = !!issue.userId;
 
+            // 0. STRICT FILTER: Only Active Issues
+            // Exclude deleted, closed, resolved, archived
+            if (issue.deleted) return;
+            const statusLower = status.toLowerCase();
+            if (['closed', 'resolved', 'archived', 'done', 'completed'].includes(statusLower)) return;
+
+            // 0B. EXPLICIT CLASSIFICATION OVERRIDE
+            if (issue.classification === 'blocking') {
+                results.push({ bucket: 'blocker', issue, reason: 'Explicitly classified as Blocking', suggestion: { severity: 'S1' } });
+                return;
+            }
+            if (issue.classification === 'misleading' || issue.classification === 'trust') {
+                results.push({ bucket: 'signal', issue, reason: 'Explicitly classified for Product/Trust', suggestion: { classification: issue.classification } });
+                return;
+            }
+            if (issue.classification === 'cosmetic') {
+                results.push({ bucket: 'noise', issue, reason: 'Explicitly classified as Cosmetic', suggestion: { severity: 'S4' } });
+                return;
+            }
+
             // 1. Noise / Close Candidates
             // Rule: Test/Pipeline class (simulated by content), Low signal, Admin created noise
             const isTest = desc.includes('test') || title.includes('test');
