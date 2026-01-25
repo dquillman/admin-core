@@ -1,1 +1,1 @@
-export const ADMIN_CORE_VERSION = '1.13.2';
+export const ADMIN_CORE_VERSION = '1.13.3';
