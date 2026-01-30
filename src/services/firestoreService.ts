@@ -4,16 +4,18 @@ import {
     where,
     orderBy,
     limit,
-    Timestamp,
-    doc,
-    getDoc,
-    updateDoc,
+    getDocs,
     addDoc,
+    updateDoc,
     deleteDoc,
+    doc,
+    onSnapshot,
     serverTimestamp,
+    writeBatch,
+    Timestamp,
+    getDoc,
     setDoc,
-    arrayUnion,
-    onSnapshot
+    arrayUnion
 } from 'firebase/firestore';
 import { db, auth } from '../firebase';
 import { safeGetDocs, safeGetDoc, safeGetCount } from '../utils/firestoreSafe';
@@ -94,7 +96,7 @@ export const searchUsers = async (searchTerm: string): Promise<User[]> => {
     }
 
     const snap = await safeGetDocs(q, { fallback: [], context: 'Users', description: 'Search Users' });
-    return snap.docs.map(doc => ({ uid: doc.id, ...doc.data() } as User));
+    return snap.docs.map(doc => ({ ...doc.data(), uid: doc.id } as User));
 };
 
 export const getTesterUsers = async (activeOnly: boolean = false): Promise<User[]> => {
@@ -108,7 +110,7 @@ export const getTesterUsers = async (activeOnly: boolean = false): Promise<User[
     }
 
     const snap = await safeGetDocs(q, { fallback: [], context: 'Users', description: 'Get Testers' });
-    return snap.docs.map(doc => ({ uid: doc.id, ...doc.data() } as User));
+    return snap.docs.map(doc => ({ ...doc.data(), uid: doc.id } as User));
 };
 
 export const getTesterSummaryStats = async (): Promise<TesterStats> => {
@@ -485,9 +487,9 @@ export const assignMissingIssueIds = async (): Promise<number> => {
         updatedCount++;
     }
 
-    await batch.commit();
-    return updatedCount;
+    return batch.commit().then(() => updatedCount);
 };
+
 
 // --- Issue Category Registry ---
 export const getIssueCategories = async (): Promise<IssueCategory[]> => {
