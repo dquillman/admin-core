@@ -366,6 +366,13 @@ export const getActionLatencyCount = async () => {
     return 0; // Aggregation disabled
 };
 
+// --- User Lookup (lightweight, for dropdowns) ---
+export const fetchAllUsersLookup = async (): Promise<{ uid: string; email: string }[]> => {
+    const usersCol = collection(db, 'users');
+    const snap = await safeGetDocs(usersCol, { fallback: [], context: 'Users', description: 'Fetch All Users Lookup' });
+    return snap.docs.map(d => ({ uid: d.id, email: d.data().email || '' }));
+};
+
 // --- Issues Management Service (Read-Only + Notes) ---
 export const getReportedIssues = async (limitCount: number = 100): Promise<ReportedIssue[]> => {
     try {
@@ -416,7 +423,7 @@ export const updateIssueStatus = async (issueId: string, status: string) => {
     await updateDoc(doc(db, 'issues', issueId), { status });
 };
 
-export const updateIssueDetails = async (issueId: string, updates: { severity?: string; type?: string; classification?: string }) => {
+export const updateIssueDetails = async (issueId: string, updates: { severity?: string; type?: string; classification?: string; userId?: string | null }) => {
     await requireAdmin();
     await updateDoc(doc(db, 'issues', issueId), updates);
 };
@@ -452,45 +459,48 @@ export const subscribeToReportedIssues = (limitCount: number = 100, onData: (iss
     });
 };
 
-export const assignMissingIssueIds = async (): Promise<number> => {
-    await requireAdmin();
-    // 1. Fetch recent issues to find max ID and missing IDs
+// Scan ALL issues to find the true maximum EC-### number.
+// Uses no orderBy (avoids excluding docs without the ordered field)
+// and no limit (avoids missing older high-numbered issues).
+const getMaxIssueNumber = async (): Promise<number> => {
     const issuesCol = collection(db, 'issues');
-    // Get enough to cover recent additions. 100 is standard view, 200 for safety.
-    const q = query(issuesCol, orderBy('timestamp', 'desc'), limit(200));
-    const snap = await safeGetDocs(q, { fallback: [], context: 'Issues', description: 'Assign IDs Check' });
+    const snap = await safeGetDocs(issuesCol, { fallback: [], context: 'Issues', description: 'Get Max Issue Number' });
 
     let maxId = 0;
-    const missingDocs: any[] = [];
-
-    snap.docs.forEach(doc => {
-        const data = doc.data();
+    snap.docs.forEach(d => {
+        const data = d.data();
         const idStr = data.displayId || data.issueId || data.issue_id;
-
         if (idStr && typeof idStr === 'string') {
             const match = idStr.match(/EC-(\d+)/);
             if (match) {
                 const num = parseInt(match[1], 10);
-                if (!isNaN(num) && num > maxId) {
-                    maxId = num;
-                }
+                if (!isNaN(num) && num > maxId) maxId = num;
             }
         }
+    });
+    return maxId;
+};
 
-        if (!idStr && !doc.id.startsWith('EC-')) {
-            // Found a candidate for assignment
-            missingDocs.push(doc);
+export const assignMissingIssueIds = async (): Promise<number> => {
+    await requireAdmin();
+
+    const issuesCol = collection(db, 'issues');
+    const snap = await safeGetDocs(issuesCol, { fallback: [], context: 'Issues', description: 'Assign IDs Check' });
+
+    const missingDocs: any[] = [];
+    snap.docs.forEach(d => {
+        const data = d.data();
+        const idStr = data.displayId || data.issueId || data.issue_id;
+        if (!idStr && !d.id.startsWith('EC-')) {
+            missingDocs.push(d);
         }
     });
 
     if (missingDocs.length === 0) return 0;
 
-    // 2. Assign IDs sequentially
+    const maxId = await getMaxIssueNumber();
     let nextId = maxId + 1;
-    let updatedCount = 0;
 
-    // Process sequentially to ensure order (though in batch it's simultaneous, logical assignment matters)
-    // We can use a batch for atomicity (up to 500 ops)
     const batch = (await import('firebase/firestore')).writeBatch(db);
 
     for (const docSnap of missingDocs) {
@@ -502,10 +512,81 @@ export const assignMissingIssueIds = async (): Promise<number> => {
             updatedAt: serverTimestamp()
         });
         nextId++;
-        updatedCount++;
     }
 
-    return batch.commit().then(() => updatedCount);
+    await batch.commit();
+    return missingDocs.length;
+};
+
+// One-time repair: detect duplicate displayIds and reassign new unique numbers to extras.
+export const repairDuplicateIssueIds = async (): Promise<{ fixed: number; log: string[] }> => {
+    await requireAdmin();
+
+    const issuesCol = collection(db, 'issues');
+    const snap = await safeGetDocs(issuesCol, { fallback: [], context: 'Issues', description: 'Repair Duplicate IDs' });
+
+    // Build map: EC number → list of {ref, timestamp}
+    const idMap = new Map<number, { ref: any; ts: number }[]>();
+
+    snap.docs.forEach(d => {
+        const data = d.data();
+        const idStr = data.displayId || data.issueId || data.issue_id;
+        if (idStr && typeof idStr === 'string') {
+            const match = idStr.match(/EC-(\d+)/);
+            if (match) {
+                const num = parseInt(match[1], 10);
+                if (!isNaN(num)) {
+                    const ts = data.timestamp?.toMillis?.() || data.createdAt?.toMillis?.() || 0;
+                    const list = idMap.get(num) || [];
+                    list.push({ ref: d.ref, ts });
+                    idMap.set(num, list);
+                }
+            }
+        }
+    });
+
+    // Find duplicates
+    const duplicates: { num: number; docs: { ref: any; ts: number }[] }[] = [];
+    idMap.forEach((docs, num) => {
+        if (docs.length > 1) duplicates.push({ num, docs });
+    });
+
+    if (duplicates.length === 0) {
+        return { fixed: 0, log: ['No duplicate issue IDs found.'] };
+    }
+
+    // Current max across all issues
+    let maxId = 0;
+    idMap.forEach((_, num) => { if (num > maxId) maxId = num; });
+
+    let nextId = maxId + 1;
+    const logEntries: string[] = [];
+    const { writeBatch } = await import('firebase/firestore');
+    const batch = writeBatch(db);
+    let writeCount = 0;
+
+    duplicates.forEach(({ num, docs }) => {
+        // Oldest keeps the original ID
+        docs.sort((a, b) => a.ts - b.ts);
+        for (let i = 1; i < docs.length; i++) {
+            const newId = `EC-${nextId}`;
+            batch.update(docs[i].ref, {
+                displayId: newId,
+                issueId: newId,
+                updatedAt: serverTimestamp()
+            });
+            logEntries.push(`EC-${num} (duplicate #${i}) → ${newId}`);
+            nextId++;
+            writeCount++;
+        }
+    });
+
+    if (writeCount > 500) {
+        return { fixed: 0, log: ['Too many duplicates for single batch (>500). Manual intervention needed.'] };
+    }
+
+    await batch.commit();
+    return { fixed: writeCount, log: logEntries };
 };
 
 
@@ -577,12 +658,18 @@ export const batchImportIssues = async (rows: ImportIssueRow[]): Promise<number>
         return 'new';
     };
 
+    // Get the true max before writing, so imported issues get unique sequential IDs
+    const maxId = await getMaxIssueNumber();
+    let nextId = maxId + 1;
+
     const { writeBatch } = await import('firebase/firestore');
     const batch = writeBatch(db);
     const user = auth.currentUser;
 
     rows.forEach(row => {
         const ref = doc(collection(db, 'issues'));
+        const displayId = `EC-${nextId}`;
+        nextId++;
 
         const issueDoc: Record<string, any> = {
             description: row.title,
@@ -592,6 +679,8 @@ export const batchImportIssues = async (rows: ImportIssueRow[]): Promise<number>
             app: row.app || '',
             userId: row.createdBy || user?.email || null,
             message: row.summary || '',
+            displayId,
+            issueId: displayId,
             url: null,
             deleted: false,
             timestamp: serverTimestamp(),

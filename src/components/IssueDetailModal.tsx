@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { X, ExternalLink, Loader2, Save, Trash2, ShieldCheck, Lightbulb } from 'lucide-react';
 import type { ReportedIssue, IssueCategory } from '../types';
 import { ISSUE_STATUS, ISSUE_STATUS_OPTIONS, ISSUE_PLATFORMS } from '../constants';
-import { updateIssueStatus, updateIssueDetails, addIssueNote, deleteIssue, subscribeToIssueCategories } from '../services/firestoreService';
+import { updateIssueStatus, updateIssueDetails, addIssueNote, deleteIssue, subscribeToIssueCategories, fetchAllUsersLookup } from '../services/firestoreService';
 import { useAuth } from '../hooks/useAuth';
 
 interface IssueDetailModalProps {
@@ -21,6 +21,10 @@ export const IssueDetailModal: React.FC<IssueDetailModalProps> = ({ issue, onClo
     // Registry State
     const [categories, setCategories] = useState<IssueCategory[]>([]);
 
+    // User lookup for Reported By dropdown
+    const [users, setUsers] = useState<{ uid: string; email: string }[]>([]);
+    const [loadingUsers, setLoadingUsers] = useState(true);
+
     // Internal state for immediate UI feedback (Optimistic UI)
     const [localIssue, setLocalIssue] = useState<ReportedIssue | null>(issue);
 
@@ -34,7 +38,16 @@ export const IssueDetailModal: React.FC<IssueDetailModalProps> = ({ issue, onClo
         return () => unsubscribe();
     }, []);
 
+    useEffect(() => {
+        fetchAllUsersLookup()
+            .then(setUsers)
+            .catch((err) => console.error('Failed to fetch users lookup:', err))
+            .finally(() => setLoadingUsers(false));
+    }, []);
+
     if (!issue || !localIssue) return null;
+
+    const userMap = new Map(users.map(u => [u.uid, u.email]));
 
     const formatDate = (val: any): string => {
         try {
@@ -60,6 +73,7 @@ export const IssueDetailModal: React.FC<IssueDetailModalProps> = ({ issue, onClo
             if (updates.type) detailUpdates.type = updates.type;
             if (updates.classification) detailUpdates.classification = updates.classification;
             if (updates.platform) detailUpdates.platform = updates.platform;
+            if ('userId' in updates) detailUpdates.userId = updates.userId;
 
             if (Object.keys(detailUpdates).length > 0) {
                 await updateIssueDetails(issue.id, detailUpdates);
@@ -359,9 +373,28 @@ export const IssueDetailModal: React.FC<IssueDetailModalProps> = ({ issue, onClo
                     {/* 4. Metadata (Read-Only) */}
                     <section className="grid grid-cols-2 md:grid-cols-4 gap-4 pt-4 border-t border-slate-800">
                         <div>
-                            <label className="text-xs font-bold text-slate-600 uppercase tracking-wider">User</label>
-                            <div className="mt-1 text-xs text-slate-400 font-mono truncate" title={localIssue.userId || 'Anonymous'}>
-                                {localIssue.userId || 'Anonymous'}
+                            <label className="text-xs font-bold text-slate-600 uppercase tracking-wider">Reported By</label>
+                            <div className="mt-1">
+                                {isAdmin ? (
+                                    <select
+                                        value={localIssue.userId || ''}
+                                        onChange={(e) => handleUpdate({ userId: e.target.value || null })}
+                                        disabled={loadingUsers}
+                                        className="bg-slate-900 border border-slate-800 text-xs text-slate-400 rounded px-2 py-1 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 w-full"
+                                    >
+                                        <option value="">Unassigned</option>
+                                        {users.map(u => (
+                                            <option key={u.uid} value={u.uid}>{u.email || u.uid}</option>
+                                        ))}
+                                        {localIssue.userId && !userMap.has(localIssue.userId) && (
+                                            <option value={localIssue.userId}>Unknown user ({localIssue.userId})</option>
+                                        )}
+                                    </select>
+                                ) : (
+                                    <div className="text-xs text-slate-400 font-mono truncate" title={localIssue.userId || 'Anonymous'}>
+                                        {(localIssue.userId && userMap.has(localIssue.userId)) ? userMap.get(localIssue.userId) : (localIssue.userId || 'Anonymous')}
+                                    </div>
+                                )}
                             </div>
                         </div>
                         <div>
