@@ -651,10 +651,14 @@ export const batchImportIssues = async (rows: ImportIssueRow[]): Promise<number>
     if (rows.length === 0) return 0;
     if (rows.length > 500) throw new Error('Batch limit exceeded: maximum 500 rows per import.');
 
-    const normalizeStatus = (status?: string): 'new' | 'in_progress' | 'resolved' => {
+    const VALID_STATUSES: Set<string> = new Set([
+        'new', 'reviewed', 'backlogged', 'in_progress', 'resolved', 'released', 'closed',
+    ]);
+    const normalizeStatus = (status?: string): string => {
         const s = status?.trim().toLowerCase();
-        if (s === 'in progress' || s === 'in_progress') return 'in_progress';
-        if (s === 'resolved') return 'resolved';
+        if (!s) return 'new';
+        if (s === 'in progress') return 'in_progress';
+        if (VALID_STATUSES.has(s)) return s;
         return 'new';
     };
 
