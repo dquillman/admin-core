@@ -46,7 +46,8 @@ const Issues: React.FC = () => {
     const [filterPlatform, setFilterPlatform] = useState<string>('all');
     const [searchUser, setSearchUser] = useState<string>('');
     const [filterClassification, setFilterClassification] = useState<string>('all');
-    const [sortOrder, setSortOrder] = useState<'newest' | 'oldest' | 'issue_id_desc' | 'issue_id_asc' | 'severity_desc' | 'severity_asc' | 'type_asc' | 'type_desc' | 'classification_risk' | 'organized'>('newest');
+    const [filterAssignee, setFilterAssignee] = useState<string>('all');
+    const [sortOrder, setSortOrder] = useState<'newest' | 'oldest' | 'issue_id_desc' | 'issue_id_asc' | 'severity_desc' | 'severity_asc' | 'type_asc' | 'type_desc' | 'classification_risk' | 'organized' | 'assignee_asc' | 'assignee_desc'>('newest');
     const [categories, setCategories] = useState<IssueCategory[]>([]);
     const [isImportOpen, setIsImportOpen] = useState(false);
 
@@ -108,6 +109,18 @@ const Issues: React.FC = () => {
         return `Unknown (${userId.slice(0, 8)}...)`;
     };
 
+    // Derived State: Unique assignee display values from current issues
+    const uniqueAssignees = useMemo(() => {
+        const seen = new Set<string>();
+        issues.filter(i => !i.deleted).forEach(i => seen.add(resolveAssignee(i.userId)));
+        return Array.from(seen).sort((a, b) => {
+            // "Unassigned" always last in dropdown
+            if (a === 'Unassigned') return 1;
+            if (b === 'Unassigned') return -1;
+            return a.localeCompare(b);
+        });
+    }, [issues, userMap]);
+
     // Filter Logic
     const filteredIssues = useMemo(() => {
         return issues.filter(issue => {
@@ -127,6 +140,8 @@ const Issues: React.FC = () => {
             if (filterSeverity !== 'all' && severity !== filterSeverity) return false;
 
             if (filterPlatform !== 'all' && issue.platform !== filterPlatform) return false;
+
+            if (filterAssignee !== 'all' && resolveAssignee(issue.userId) !== filterAssignee) return false;
 
             if (searchUser) {
                 const searchLower = searchUser.toLowerCase();
@@ -230,11 +245,21 @@ const Issues: React.FC = () => {
                 return sortOrder === 'type_asc' ? typeA.localeCompare(typeB) : typeB.localeCompare(typeA);
             }
 
+            if (sortOrder === 'assignee_asc' || sortOrder === 'assignee_desc') {
+                const aName = resolveAssignee(a.userId);
+                const bName = resolveAssignee(b.userId);
+                // "Unassigned" always sorts to bottom regardless of direction
+                if (aName === 'Unassigned' && bName !== 'Unassigned') return 1;
+                if (bName === 'Unassigned' && aName !== 'Unassigned') return -1;
+                const cmp = aName.localeCompare(bName);
+                return sortOrder === 'assignee_asc' ? cmp : -cmp;
+            }
+
             const dateA = getMillis(a);
             const dateB = getMillis(b);
             return sortOrder === 'newest' ? dateB - dateA : dateA - dateB;
         });
-}, [issues, filterApp, filterType, filterStatus, filterSeverity, filterClassification, filterPlatform, searchUser, sortOrder]);
+}, [issues, filterApp, filterType, filterStatus, filterSeverity, filterClassification, filterAssignee, filterPlatform, searchUser, sortOrder, userMap]);
 
 
 
@@ -533,6 +558,18 @@ return (
                 ))}
             </select>
 
+            {/* Assigned To Filter */}
+            <select
+                value={filterAssignee}
+                onChange={(e) => setFilterAssignee(e.target.value)}
+                className="bg-slate-950 border border-slate-800 text-slate-300 text-sm rounded-lg focus:ring-brand-500 focus:border-brand-500 block w-full md:w-auto p-2.5"
+            >
+                <option value="all">All Assignees</option>
+                {uniqueAssignees.map(name => (
+                    <option key={name} value={name}>{name}</option>
+                ))}
+            </select>
+
             <div className="hidden md:block w-px h-6 bg-slate-800 mx-2"></div>
 
             {/* Sort Dropdown */}
@@ -552,6 +589,8 @@ return (
                     <option value="classification_risk">Risk (Classification)</option>
                     <option value="type_asc">Type (A → Z)</option>
                     <option value="type_desc">Type (Z → A)</option>
+                    <option value="assignee_asc">Assigned To (A → Z)</option>
+                    <option value="assignee_desc">Assigned To (Z → A)</option>
                     <option value="organized">Organized (Smart Sort)</option>
                 </select>
             </div>
