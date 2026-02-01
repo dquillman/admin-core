@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { assignMissingIssueIds, subscribeToReportedIssues, subscribeToIssueCategories } from '../services/firestoreService';
+import { assignMissingIssueIds, repairDuplicateIssueIds, subscribeToReportedIssues, subscribeToIssueCategories, fetchAllUsersLookup } from '../services/firestoreService';
 import type { ReportedIssue, IssueCategory } from '../types';
 import { OperatorReviewPanel } from '../components/OperatorReviewPanel';
 import { IssueDetailModal } from '../components/IssueDetailModal';
@@ -50,6 +50,9 @@ const Issues: React.FC = () => {
     const [categories, setCategories] = useState<IssueCategory[]>([]);
     const [isImportOpen, setIsImportOpen] = useState(false);
 
+    // User lookup for resolving userId → email on cards
+    const [users, setUsers] = useState<{ uid: string; email: string }[]>([]);
+
     useEffect(() => {
         setLoading(true);
         const unsubscribe = subscribeToReportedIssues(100, (data) => {
@@ -62,6 +65,12 @@ const Issues: React.FC = () => {
     useEffect(() => {
         const unsubscribe = subscribeToIssueCategories((cats) => setCategories(cats));
         return () => unsubscribe();
+    }, []);
+
+    useEffect(() => {
+        fetchAllUsersLookup()
+            .then(setUsers)
+            .catch((err) => console.error('Failed to fetch users lookup:', err));
     }, []);
 
     // Manual refresh is no longer strictly necessary but kept for other reasons if needed
@@ -88,6 +97,16 @@ const Issues: React.FC = () => {
         const apps = new Set(issues.map(i => i.app).filter(Boolean));
         return Array.from(apps).sort();
     }, [issues]);
+
+    // Memoized user lookup map (uid → email)
+    const userMap = useMemo(() => new Map(users.map(u => [u.uid, u.email])), [users]);
+
+    const resolveAssignee = (userId: string | null | undefined): string => {
+        if (!userId) return 'Unassigned';
+        if (userMap.has(userId)) return userMap.get(userId)!;
+        if (userId.includes('@')) return userId;
+        return `Unknown (${userId.slice(0, 8)}...)`;
+    };
 
     // Filter Logic
     const filteredIssues = useMemo(() => {
@@ -224,14 +243,30 @@ const handleAssignIds = async () => {
     try {
         const count = await assignMissingIssueIds();
         if (count > 0) {
-            console.log(`Assigned IDs to ${count} issues.`);
-            // No need to fetch, realtime listener will handle it
+            alert(`Assigned IDs to ${count} issues.`);
         } else {
-            console.log("No missing IDs found.");
+            alert("No missing IDs found.");
         }
     } catch (error) {
         console.error("Failed to assign IDs:", error);
         alert("Failed to assign IDs. Check console.");
+    } finally {
+        setIsAssigning(false);
+    }
+};
+
+const handleRepairIds = async () => {
+    setIsAssigning(true);
+    try {
+        const result = await repairDuplicateIssueIds();
+        if (result.fixed > 0) {
+            alert(`Repaired ${result.fixed} duplicate IDs:\n${result.log.join('\n')}`);
+        } else {
+            alert(result.log[0]);
+        }
+    } catch (error) {
+        console.error("Failed to repair IDs:", error);
+        alert("Failed to repair IDs. Check console.");
     } finally {
         setIsAssigning(false);
     }
@@ -394,6 +429,19 @@ return (
                 </button>
 
                 <button
+                    onClick={handleRepairIds}
+                    disabled={isAssigning}
+                    className={`p-2 rounded-lg transition-colors flex items-center gap-2 ${isAssigning
+                        ? 'bg-slate-800/50 text-slate-600 cursor-not-allowed'
+                        : 'bg-amber-900/60 hover:bg-amber-800/70 text-amber-300 border border-amber-700/40'
+                        }`}
+                    title="Repair duplicate EC-### IDs (one-time)"
+                >
+                    {isAssigning ? <Loader2 className="w-5 h-5 animate-spin" /> : <AlertCircle className="w-5 h-5" />}
+                    <span className="hidden md:inline text-xs font-medium">Repair IDs</span>
+                </button>
+
+                <button
                     onClick={fetchIssues}
                     className="p-2 bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white rounded-lg transition-colors self-start md:self-center"
                     title="Refresh Issues"
@@ -553,8 +601,8 @@ return (
                                 </div>
                                 <div className="flex items-center gap-2 text-slate-400 text-sm">
                                     <User className="w-4 h-4" />
-                                    <span className="truncate max-w-[150px]" title={issue.userId || 'Anonymous'}>
-                                        {issue.userId ? issue.userId.slice(0, 8) + '...' : 'Anonymous'}
+                                    <span className="truncate max-w-[150px]" title={resolveAssignee(issue.userId)}>
+                                        {resolveAssignee(issue.userId)}
                                     </span>
                                 </div>
                                 <div className="text-xs text-brand-400 font-mono font-bold">
