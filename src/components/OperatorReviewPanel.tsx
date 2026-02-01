@@ -80,7 +80,7 @@ export const OperatorReviewPanel: React.FC<OperatorReviewPanelProps> = ({ isOpen
             // 2. Execution Blockers
             // Rule: Critical/High, Open/Working, Age > 24h
             const isHighSev = sev === 'S1' || sev === 'S2';
-            const isActive = status === ISSUE_STATUS.NEW || status === ISSUE_STATUS.WORKING || status === 'open' || status === 'in_progress';
+            const isActive = status === ISSUE_STATUS.NEW || status === ISSUE_STATUS.REVIEWED || status === ISSUE_STATUS.WORKING || status === 'open' || status === 'in_progress';
 
             if (isHighSev && isActive && age > oneDay) {
                 results.push({

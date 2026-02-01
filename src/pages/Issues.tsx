@@ -162,6 +162,7 @@ const Issues: React.FC = () => {
                 // 1. Status Priority
                 const statusMap: Record<string, number> = {
                     [ISSUE_STATUS.NEW]: 0,
+                    [ISSUE_STATUS.REVIEWED]: 0.25,
                     [ISSUE_STATUS.BACKLOGGED]: 0.5,
                     [ISSUE_STATUS.WORKING]: 1,
                     'blocked': 2,
