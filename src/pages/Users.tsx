@@ -28,7 +28,8 @@ import {
     Ban,
     X,
     Loader2,
-    MoreVertical
+    MoreVertical,
+    Download
 } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -115,6 +116,22 @@ const UsersPage: React.FC = () => {
         }
     };
 
+    const exportUsersToCSV = () => {
+        if (!users || users.length === 0) return;
+        const headers = Object.keys(users[0]);
+        const rows = users.map(user =>
+            headers.map(h => JSON.stringify(user[h] ?? "")).join(",")
+        );
+        const csv = [headers.join(","), ...rows].join("\n");
+        const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = `users-export-${new Date().toISOString().slice(0, 10)}.csv`;
+        link.click();
+        URL.revokeObjectURL(url);
+    };
+
     const confirmModal = confirmAction && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[60] flex items-center justify-center p-4 animate-in fade-in duration-200">
             <div className="bg-slate-900 border border-slate-800 rounded-3xl p-8 max-w-md w-full shadow-2xl scale-100 animate-in zoom-in-95 duration-200">
@@ -186,6 +203,15 @@ const UsersPage: React.FC = () => {
                     <p className="text-slate-400">Manage platform members and their permissions</p>
                 </div>
                 <div className="flex items-center gap-3 w-full md:w-auto">
+                    <button
+                        onClick={exportUsersToCSV}
+                        disabled={users.length === 0}
+                        className="flex items-center gap-2 px-4 py-3 rounded-2xl bg-slate-900 border border-slate-800 text-slate-400 hover:text-white transition-all font-medium whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
+                        title="Export visible users as CSV"
+                    >
+                        <Download className="w-4 h-4" />
+                        Export users (CSV)
+                    </button>
                     <button
                         onClick={() => setShowTestersOnly(!showTestersOnly)}
                         className={cn(

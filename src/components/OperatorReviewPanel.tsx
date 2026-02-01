@@ -2,6 +2,8 @@ import React, { useMemo } from 'react';
 import type { ReportedIssue } from '../types';
 import { X, AlertTriangle, Lightbulb, ClipboardList, Trash2, ArrowRight } from 'lucide-react';
 
+import { ISSUE_STATUS } from '../constants';
+
 interface OperatorReviewPanelProps {
     isOpen: boolean;
     onClose: () => void;
@@ -30,7 +32,7 @@ export const OperatorReviewPanel: React.FC<OperatorReviewPanelProps> = ({ isOpen
         issues.forEach(issue => {
             // Safe accessors
             const sev = issue.severity || 'S3';
-            const status = issue.status || 'new';
+            const status = issue.status || ISSUE_STATUS.NEW;
             const type = issue.type || 'bug';
             const desc = (issue.description || issue.message || '').toLowerCase();
             const title = (issue.displayId || issue.id).toLowerCase();
@@ -42,7 +44,7 @@ export const OperatorReviewPanel: React.FC<OperatorReviewPanelProps> = ({ isOpen
             // Exclude deleted, closed, resolved, archived
             if (issue.deleted) return;
             const statusLower = status.toLowerCase();
-            if (['closed', 'resolved', 'archived', 'done', 'completed'].includes(statusLower)) return;
+            if ([ISSUE_STATUS.CLOSED, 'resolved', 'archived', 'done', 'completed'].includes(statusLower)) return;
 
             // 0B. EXPLICIT CLASSIFICATION OVERRIDE
             if (issue.classification === 'blocking') {
@@ -70,7 +72,7 @@ export const OperatorReviewPanel: React.FC<OperatorReviewPanelProps> = ({ isOpen
                     bucket: 'noise',
                     issue,
                     reason: isTest ? 'Contains "test" keyword' : isLowSignal ? 'Low signal/Empty description' : 'Potential admin noise',
-                    suggestion: { status: 'closed', classification: 'cosmetic' }
+                    suggestion: { status: ISSUE_STATUS.CLOSED, classification: 'cosmetic' }
                 });
                 return;
             }
@@ -78,14 +80,14 @@ export const OperatorReviewPanel: React.FC<OperatorReviewPanelProps> = ({ isOpen
             // 2. Execution Blockers
             // Rule: Critical/High, Open/Working, Age > 24h
             const isHighSev = sev === 'S1' || sev === 'S2';
-            const isActive = status === 'new' || status === 'working' || status === 'open' || status === 'in_progress';
+            const isActive = status === ISSUE_STATUS.NEW || status === ISSUE_STATUS.WORKING || status === 'open' || status === 'in_progress';
 
             if (isHighSev && isActive && age > oneDay) {
                 results.push({
                     bucket: 'blocker',
                     issue,
                     reason: 'Stagnant High Priority Issue (>24h)',
-                    suggestion: { status: 'working', severity: sev } // Suggest active working
+                    suggestion: { status: ISSUE_STATUS.WORKING, severity: sev } // Suggest active working
                 });
                 return;
             }
@@ -111,7 +113,7 @@ export const OperatorReviewPanel: React.FC<OperatorReviewPanelProps> = ({ isOpen
                 bucket: 'admin',
                 issue,
                 reason: 'Routine maintenance / Standard issue',
-                suggestion: { status: 'working' }
+                suggestion: { status: ISSUE_STATUS.WORKING }
             });
         });
 
@@ -280,8 +282,8 @@ const BucketSection: React.FC<{
                             <div>
                                 <div className="flex items-center gap-2 mb-1">
                                     <span className="text-xs font-mono font-bold text-slate-500">{item.issue.displayId || 'EC-???'}</span>
-                                    <span className={`text-[10px] uppercase font-bold px-1.5 rounded border ${item.issue.status === 'new' ? 'border-brand-500/20 text-brand-400' : 'border-slate-700 text-slate-500'}`}>
-                                        {item.issue.status || 'new'}
+                                    <span className={`text-[10px] uppercase font-bold px-1.5 rounded border ${item.issue.status === ISSUE_STATUS.NEW ? 'border-brand-500/20 text-brand-400' : 'border-slate-700 text-slate-500'}`}>
+                                        {item.issue.status || ISSUE_STATUS.NEW}
                                     </span>
                                 </div>
                                 <h4 className="text-sm text-slate-300 font-medium line-clamp-2">{item.issue.description || item.issue.message}</h4>

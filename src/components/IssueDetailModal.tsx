@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { X, ExternalLink, Loader2, Save, Trash2, ShieldCheck, Lightbulb } from 'lucide-react';
-import type { ReportedIssue } from '../types';
-import { updateIssueStatus, updateIssueDetails, addIssueNote, deleteIssue, getIssueCategories } from '../services/firestoreService';
+import type { ReportedIssue, IssueCategory } from '../types';
+import { ISSUE_STATUS, ISSUE_STATUS_OPTIONS, ISSUE_PLATFORMS } from '../constants';
+import { updateIssueStatus, updateIssueDetails, addIssueNote, deleteIssue, subscribeToIssueCategories } from '../services/firestoreService';
 import { useAuth } from '../hooks/useAuth';
 
 interface IssueDetailModalProps {
@@ -18,7 +19,7 @@ export const IssueDetailModal: React.FC<IssueDetailModalProps> = ({ issue, onClo
     const [submittingNote, setSubmittingNote] = useState(false);
 
     // Registry State
-    const [categories, setCategories] = useState<any[]>([]);
+    const [categories, setCategories] = useState<IssueCategory[]>([]);
 
     // Internal state for immediate UI feedback (Optimistic UI)
     const [localIssue, setLocalIssue] = useState<ReportedIssue | null>(issue);
@@ -29,7 +30,8 @@ export const IssueDetailModal: React.FC<IssueDetailModalProps> = ({ issue, onClo
     }, [issue]);
 
     useEffect(() => {
-        getIssueCategories().then((cats: any[]) => setCategories(cats));
+        const unsubscribe = subscribeToIssueCategories((cats) => setCategories(cats));
+        return () => unsubscribe();
     }, []);
 
     if (!issue || !localIssue) return null;
@@ -57,7 +59,7 @@ export const IssueDetailModal: React.FC<IssueDetailModalProps> = ({ issue, onClo
             if (updates.severity) detailUpdates.severity = updates.severity;
             if (updates.type) detailUpdates.type = updates.type;
             if (updates.classification) detailUpdates.classification = updates.classification;
-            if (updates.suggestedCategory !== undefined) detailUpdates.suggestedCategory = updates.suggestedCategory;
+            if (updates.platform) detailUpdates.platform = updates.platform;
 
             if (Object.keys(detailUpdates).length > 0) {
                 await updateIssueDetails(issue.id, detailUpdates);
@@ -96,14 +98,6 @@ export const IssueDetailModal: React.FC<IssueDetailModalProps> = ({ issue, onClo
                 alert("Failed to delete issue");
             }
         }
-    };
-
-    const isEffectivelyUncategorized = (iss: ReportedIssue) => {
-        if (!iss.type) return true;
-        if ((iss.type as string) === 'Uncategorized') return true;
-        // Also uncategorized if the type ID is not found in the categories registry
-        if (!categories.some(c => c.id === iss.type)) return true;
-        return false;
     };
 
     return (
@@ -183,34 +177,6 @@ export const IssueDetailModal: React.FC<IssueDetailModalProps> = ({ issue, onClo
                                 </button>
 
                             </div>
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-                            {/* Suggestion Box if Uncategorized */}
-                            {isEffectivelyUncategorized(localIssue) && (
-                                <div className="mt-2 animate-in fade-in slide-in-from-top-1">
-                                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Suggested Category</label>
-                                    <input
-                                        type="text"
-                                        value={localIssue.suggestedCategory || ''}
-                                        onChange={(e) => handleUpdate({ suggestedCategory: e.target.value })}
-                                        placeholder="What should this be? (e.g. Login, UI, Quiz)"
-                                        className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2 py-1.5 text-xs text-white focus:border-brand-500/50 focus:outline-none"
-                                    />
-                                </div>
-                            )}
                         </div>
 
                         {/* Severity */}
@@ -232,15 +198,13 @@ export const IssueDetailModal: React.FC<IssueDetailModalProps> = ({ issue, onClo
                         <div>
                             <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Status</label>
                             <select
-                                value={localIssue.status || 'new'}
+                                value={localIssue.status || ISSUE_STATUS.NEW}
                                 onChange={(e) => handleUpdate({ status: e.target.value })}
                                 className="w-full bg-slate-900 border border-slate-700 text-slate-200 text-sm rounded-lg p-2.5 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 transition-colors"
                             >
-                                <option value="new">New</option>
-                                <option value="working">In Progress / Working</option>
-                                <option value="fixed">Fixed</option>
-                                <option value="released">Released</option>
-                                <option value="closed">Closed</option>
+                                {ISSUE_STATUS_OPTIONS.map(opt => (
+                                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                                ))}
                             </select>
                         </div>
 
@@ -401,9 +365,22 @@ export const IssueDetailModal: React.FC<IssueDetailModalProps> = ({ issue, onClo
                             </div>
                         </div>
                         <div>
-                            <label className="text-xs font-bold text-slate-600 uppercase tracking-wider">Email</label>
-                            <div className="mt-1 text-xs text-slate-400 truncate" title={localIssue.userEmail || 'N/A'}>
-                                {localIssue.userEmail || 'N/A'}
+                            <label className="text-xs font-bold text-slate-600 uppercase tracking-wider">Platform</label>
+                            <div className="mt-1">
+                                {isAdmin ? (
+                                    <select
+                                        value={localIssue.platform || ''}
+                                        onChange={(e) => handleUpdate({ platform: e.target.value })}
+                                        className="bg-slate-900 border border-slate-800 text-xs text-slate-400 rounded px-2 py-1 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 w-full"
+                                    >
+                                        <option value="">Unknown</option>
+                                        {Object.values(ISSUE_PLATFORMS).map(p => (
+                                            <option key={p} value={p}>{p}</option>
+                                        ))}
+                                    </select>
+                                ) : (
+                                    <div className="text-xs text-slate-400">{localIssue.platform || 'N/A'}</div>
+                                )}
                             </div>
                         </div>
                         <div>

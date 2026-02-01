@@ -4,14 +4,12 @@ import {
     where,
     orderBy,
     limit,
-    getDocs,
     addDoc,
     updateDoc,
     deleteDoc,
     doc,
     onSnapshot,
     serverTimestamp,
-    writeBatch,
     Timestamp,
     getDoc,
     setDoc,
@@ -84,6 +82,18 @@ export const getDashboardStats = async (): Promise<AdminStats> => {
 };
 
 // --- Users Service ---
+
+/** DEV-ONLY: Asserts that the uid on a mapped User always equals the Firestore doc ID. */
+const assertUidInvariant = (user: User, docId: string) => {
+    if (import.meta.env.DEV && user.uid !== docId) {
+        console.error(
+            `[UID INVARIANT VIOLATION] user.uid "${user.uid}" !== doc.id "${docId}". ` +
+            `This means Firestore doc data contains a stale/mismatched uid field. ` +
+            `The doc.id should always win.`
+        );
+    }
+};
+
 export const searchUsers = async (searchTerm: string): Promise<User[]> => {
     const usersCol = collection(db, 'users');
     let q;
@@ -96,7 +106,11 @@ export const searchUsers = async (searchTerm: string): Promise<User[]> => {
     }
 
     const snap = await safeGetDocs(q, { fallback: [], context: 'Users', description: 'Search Users' });
-    return snap.docs.map(doc => ({ ...doc.data(), uid: doc.id } as User));
+    return snap.docs.map(doc => {
+        const user = { ...doc.data(), uid: doc.id } as User;
+        assertUidInvariant(user, doc.id);
+        return user;
+    });
 };
 
 export const getTesterUsers = async (activeOnly: boolean = false): Promise<User[]> => {
@@ -110,7 +124,11 @@ export const getTesterUsers = async (activeOnly: boolean = false): Promise<User[
     }
 
     const snap = await safeGetDocs(q, { fallback: [], context: 'Users', description: 'Get Testers' });
-    return snap.docs.map(doc => ({ ...doc.data(), uid: doc.id } as User));
+    return snap.docs.map(doc => {
+        const user = { ...doc.data(), uid: doc.id } as User;
+        assertUidInvariant(user, doc.id);
+        return user;
+    });
 };
 
 export const getTesterSummaryStats = async (): Promise<TesterStats> => {
@@ -530,6 +548,73 @@ export const updateIssueCategory = async (id: string, updates: Partial<IssueCate
     // Prevent ID updates
     const { id: _, ...safeUpdates } = updates;
     await updateDoc(doc(db, 'issue_categories', id), safeUpdates);
+};
+
+// --- Bulk Issue Import ---
+
+export interface ImportIssueRow {
+    title: string;
+    severity: string;
+    status?: string;
+    category?: string;
+    source?: string;
+    summary?: string;
+    notes?: string;
+    app?: string;
+    createdBy?: string;
+}
+
+export const batchImportIssues = async (rows: ImportIssueRow[]): Promise<number> => {
+    await requireAdmin();
+
+    if (rows.length === 0) return 0;
+    if (rows.length > 500) throw new Error('Batch limit exceeded: maximum 500 rows per import.');
+
+    const normalizeStatus = (status?: string): 'new' | 'in_progress' | 'resolved' => {
+        const s = status?.trim().toLowerCase();
+        if (s === 'in progress' || s === 'in_progress') return 'in_progress';
+        if (s === 'resolved') return 'resolved';
+        return 'new';
+    };
+
+    const { writeBatch } = await import('firebase/firestore');
+    const batch = writeBatch(db);
+    const user = auth.currentUser;
+
+    rows.forEach(row => {
+        const ref = doc(collection(db, 'issues'));
+
+        const issueDoc: Record<string, any> = {
+            description: row.title,
+            severity: row.severity,
+            status: normalizeStatus(row.status),
+            type: row.category || '',
+            app: row.app || '',
+            userId: row.createdBy || user?.email || null,
+            message: row.summary || '',
+            url: null,
+            deleted: false,
+            timestamp: serverTimestamp(),
+            createdAt: serverTimestamp(),
+        };
+
+        if (row.source) {
+            issueDoc.source = row.source;
+        }
+
+        if (row.notes) {
+            issueDoc.notes = [{
+                text: row.notes,
+                adminUid: user?.uid || 'import',
+                createdAt: Timestamp.now(),
+            }];
+        }
+
+        batch.set(ref, issueDoc);
+    });
+
+    await batch.commit();
+    return rows.length;
 };
 
 export const seedDefaultCategories = async () => {

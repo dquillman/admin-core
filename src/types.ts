@@ -140,7 +140,7 @@ export interface ReportedIssue {
     displayId?: string; // Friendly ID (e.g. EC-123). Optional initially.
     app: string;
     userId: string | null;
-    type: 'bug' | 'confusion' | 'feedback' | 'ux' | 'accessibility' | 'tutor-gap' | 'mobile';
+    type: string; // Category registry ID (e.g. 'content_quality', 'quiz_assessment_logic')
     severity?: 'S1' | 'S2' | 'S3' | 'S4';
     message: string; // Legacy or alternative
     description?: string; // Actual field from client
@@ -155,6 +155,7 @@ export interface ReportedIssue {
     version?: string;
     path?: string;
     userAgent?: string;
+    platform?: string; // e.g. 'Mobile', 'Desktop'
 
     // Unused / New Fields
     attachmentUrl?: string | null;

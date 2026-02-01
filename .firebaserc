@@ -1,5 +1,7 @@
 {
-  "projects": {},
+  "projects": {
+    "default": "exam-coach-ai-platform"
+  },
   "targets": {
     "exam-coach-ai-platform": {
       "hosting": {

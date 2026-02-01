@@ -139,7 +139,7 @@ service cloud.firestore {
      * - Admins can read/manage all.
      */
     match /issue_categories/{categoryId} {
-      allow read: if true;
+      allow read: if isAdmin();
       allow write: if isAdmin();
     }
 
@@ -207,6 +207,17 @@ service cloud.firestore {
 
     match /admin_config/{docId} {
       allow read, write: if isAdmin();
+    }
+
+    /**
+     * System Configuration (Public Read)
+     * - Contains non-sensitive system metadata (e.g. required app versions)
+     * - Must be readable pre-auth for version enforcement
+     * - Only admins can write
+     */
+    match /system_config/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
     }
 
     // Default: Deny all other access
