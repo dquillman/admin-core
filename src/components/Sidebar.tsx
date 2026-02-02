@@ -13,7 +13,8 @@ import {
     Megaphone,
     Filter,
     CheckCircle2,
-    AlertCircle
+    AlertCircle,
+    ClipboardCheck
 } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { AppSelector } from './AppSelector';
@@ -36,6 +37,7 @@ const Sidebar: React.FC = () => {
         { to: '/gods-view', icon: Activity, label: 'Gods View' },
         { to: '/users', icon: Users, label: 'Users' },
         { to: '/issues', icon: AlertCircle, label: 'Issues' },
+        { to: '/operator-report', icon: ClipboardCheck, label: 'Operator Report' },
         { to: '/broadcast', icon: Megaphone, label: 'Broadcast' },
         { to: '/tester-activity', icon: Activity, label: 'Tester Activity' },
         { to: '/plans', icon: CreditCard, label: 'Plans & Trials' },
@@ -119,8 +121,12 @@ const Sidebar: React.FC = () => {
                     <LogOut className="w-5 h-5 shrink-0" />
                     <span className="font-medium">Sign Out</span>
                 </button>
-                <div className="mt-4 text-center">
-                    <span className="text-xs text-slate-600 font-mono">Admin Core v{ADMIN_CORE_VERSION}</span>
+                <div className="mt-4 text-center space-y-1">
+                    <div className="text-xs text-slate-600 font-mono">Admin Core v{ADMIN_CORE_VERSION}</div>
+                    <div className="inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-amber-500/70">
+                        <span className="w-1.5 h-1.5 rounded-full bg-amber-500/70"></span>
+                        admin
+                    </div>
                 </div>
             </div>
         </aside>
