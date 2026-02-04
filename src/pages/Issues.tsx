@@ -3,7 +3,7 @@ import { assignMissingIssueIds, repairDuplicateIssueIds, subscribeToReportedIssu
 import type { ReportedIssue, IssueCategory } from '../types';
 import { OperatorReviewPanel } from '../components/OperatorReviewPanel';
 import { IssueDetailModal } from '../components/IssueDetailModal';
-import { ISSUE_STATUS, ISSUE_STATUS_OPTIONS, ISSUE_PLATFORMS, getStatusColor as getStatusColorConstant } from '../constants';
+import { ISSUE_STATUS, ISSUE_STATUS_OPTIONS, ISSUE_PLATFORMS, getStatusColor as getStatusColorConstant, APP_OPTIONS, normalizeAppValue } from '../constants';
 
 import {
     AlertCircle,
@@ -201,11 +201,8 @@ const Issues: React.FC = () => {
         }
     };
 
-    // Derived State: Unique Apps for Filter Dropdown
-    const uniqueApps = useMemo(() => {
-        const apps = new Set(issues.map(i => i.app).filter(Boolean));
-        return Array.from(apps).sort();
-    }, [issues]);
+    // Derived State: Unique Apps for Filter Dropdown - NOW USES REGISTRY
+    // Legacy uniqueApps removed - we now use APP_OPTIONS from constants
 
     // Memoized user lookup map (uid → email)
     const userMap = useMemo(() => new Map(users.map(u => [u.uid, u.email])), [users]);
@@ -245,7 +242,7 @@ const Issues: React.FC = () => {
 
         return issues.filter(issue => {
             if (issue.deleted) return false; // Filter out soft-deleted issues
-            if (filterApp !== 'all' && issue.app !== filterApp) return false;
+            if (filterApp !== 'all' && normalizeAppValue(issue.app) !== filterApp) return false;
 
             // Multi-status filter: issue must match one of the selected statuses
             if (!filterStatuses.includes(resolveStatus(issue.status))) return false;
@@ -698,8 +695,8 @@ const Issues: React.FC = () => {
                     className="bg-slate-950 border border-slate-800 text-slate-300 text-sm rounded-lg focus:ring-brand-500 focus:border-brand-500 block w-full md:w-auto p-2.5"
                 >
                     <option value="all">All Apps</option>
-                    {uniqueApps.map(app => (
-                        <option key={app} value={app}>{app}</option>
+                    {APP_OPTIONS.map(opt => (
+                        <option key={opt.value} value={opt.value}>{opt.label}</option>
                     ))}
                 </select>
 

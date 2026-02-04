@@ -12,6 +12,46 @@ export const ISSUE_STATUS = {
 
 export type IssueStatusValue = typeof ISSUE_STATUS[keyof typeof ISSUE_STATUS];
 
+// Canonical App Registry - SINGLE SOURCE OF TRUTH
+// Keys are stored values (Firestore), labels are UI display, prefixes are for issue IDs
+export const APP_REGISTRY = {
+    'admin-core': {
+        label: 'Admin Core',
+        prefix: 'AC'
+    },
+    'exam-coach': {
+        label: 'Exam Coach',
+        prefix: 'EC'
+    }
+} as const;
+
+export type AppKey = keyof typeof APP_REGISTRY;
+
+// Helper to get all valid app keys
+export const APP_KEYS = Object.keys(APP_REGISTRY) as AppKey[];
+
+// Helper to get app options for dropdowns
+export const APP_OPTIONS = APP_KEYS.map(key => ({
+    value: key,
+    label: APP_REGISTRY[key].label,
+    prefix: APP_REGISTRY[key].prefix
+}));
+
+// Helper to get prefix from app key
+export const getAppPrefix = (appKey: string): string => {
+    const entry = APP_REGISTRY[appKey as AppKey];
+    return entry?.prefix ?? 'EC'; // Default to EC for unknown
+};
+
+// Normalize legacy app values to canonical keys
+export const normalizeAppValue = (value: string | undefined | null): AppKey => {
+    if (!value) return 'exam-coach';
+    const lower = value.toLowerCase().replace(/\s+/g, '');
+    if (lower === 'admincore' || lower === 'admin-core') return 'admin-core';
+    if (lower === 'examcoach' || lower === 'exam-coach') return 'exam-coach';
+    return 'exam-coach'; // Default fallback
+};
+
 // Display Options for UI Dropdowns
 export const ISSUE_STATUS_OPTIONS = [
     { value: ISSUE_STATUS.NEW, label: 'New' },

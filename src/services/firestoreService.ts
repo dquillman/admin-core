@@ -18,6 +18,8 @@ import {
 import { db, auth } from '../firebase';
 import { safeGetDocs, safeGetDoc, safeGetCount } from '../utils/firestoreSafe';
 import type { User, TesterStats, ReportedIssue, IssueNote, IssueCategory } from '../types';
+import { getAppPrefix, APP_KEYS } from '../constants';
+import type { AppKey } from '../constants';
 
 // GLOBAL KILL SWITCH - STRICT NO AGGREGATION
 export const CLIENT_STATS_ENABLED = true; // Enabled but only for safe value reading
@@ -432,6 +434,59 @@ export const deleteIssue = async (issueId: string) => {
     await requireAdmin();
     // Soft delete to allow recovery if needed, and to maintain history
     await updateDoc(doc(db, 'issues', issueId), { deleted: true });
+};
+
+// Create a new issue with auto-generated ID based on app prefix
+export const createIssue = async (data: {
+    app: AppKey;
+    title: string;
+    description?: string;
+}): Promise<string> => {
+    await requireAdmin();
+
+    // Validate app key
+    if (!APP_KEYS.includes(data.app)) {
+        throw new Error(`Invalid app key: ${data.app}. Must be one of: ${APP_KEYS.join(', ')}`);
+    }
+
+    // Get prefix from registry
+    const prefix = getAppPrefix(data.app);
+
+    // Find max ID for this prefix
+    const issuesCol = collection(db, 'issues');
+    const snap = await safeGetDocs(issuesCol, { fallback: [], context: 'Issues', description: 'Create Issue - Get Max ID' });
+
+    let maxId = 0;
+    snap.docs.forEach(d => {
+        const docData = d.data();
+        const idStr = docData.displayId || docData.issueId || docData.issue_id;
+        if (idStr && typeof idStr === 'string') {
+            const match = idStr.match(new RegExp(`${prefix}-(\\d+)`));
+            if (match) {
+                const num = parseInt(match[1], 10);
+                if (!isNaN(num) && num > maxId) maxId = num;
+            }
+        }
+    });
+
+    const displayId = `${prefix}-${maxId + 1}`;
+
+    const issueDoc = await addDoc(issuesCol, {
+        app: data.app, // Canonical key stored
+        message: data.title,
+        description: data.description || '',
+        displayId,
+        issueId: displayId,
+        status: 'new',
+        severity: 'S2',
+        type: 'Uncategorized',
+        timestamp: serverTimestamp(),
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+        notes: [],
+    });
+
+    return issueDoc.id;
 };
 
 export const subscribeToReportedIssues = (limitCount: number = 100, onData: (issues: ReportedIssue[]) => void): (() => void) => {
