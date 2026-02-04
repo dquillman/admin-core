@@ -30,6 +30,71 @@ const resolveStatus = (s?: string): string => {
     return v;
 };
 
+// --- Issue State Drift Helpers ---
+// Compute days since last status change (uses updatedAt, falls back to timestamp/createdAt)
+const getDaysInStatus = (issue: ReportedIssue): number => {
+    const now = Date.now();
+    let lastUpdate: number | null = null;
+
+    if (issue.updatedAt?.toMillis) {
+        lastUpdate = issue.updatedAt.toMillis();
+    } else if (issue.timestamp?.toMillis) {
+        lastUpdate = issue.timestamp.toMillis();
+    } else if (issue.createdAt?.toMillis) {
+        lastUpdate = issue.createdAt.toMillis();
+    }
+
+    if (!lastUpdate) return 0;
+    return Math.floor((now - lastUpdate) / (1000 * 60 * 60 * 24));
+};
+
+// Drift thresholds: Reviewed > 3 days = warning, Blocked > 2 days = critical
+type DriftLevel = 'none' | 'warning' | 'critical';
+const getDriftLevel = (status: string, days: number): DriftLevel => {
+    if (status === 'reviewed' && days > 3) return 'warning';
+    if (status === 'blocked' && days > 2) return 'critical';
+    return 'none';
+};
+
+// --- Filter Presets ---
+interface IssueFilterPreset {
+    id: string;
+    name: string;
+    statuses: string[];
+    severity?: string;
+}
+
+const PRESETS_STORAGE_KEY = 'admincore.issueFilterPresets';
+
+const DEFAULT_PRESETS: IssueFilterPreset[] = [
+    { id: 'daily-triage', name: 'Daily Triage', statuses: ['new', 'reviewed', 'in_progress'] },
+    { id: 'stuck-blocking', name: 'Stuck & Blocking', statuses: ['blocked'] },
+    { id: 'ready-to-close', name: 'Ready to Close', statuses: ['resolved'] },
+];
+
+const loadPresets = (): IssueFilterPreset[] => {
+    try {
+        const stored = localStorage.getItem(PRESETS_STORAGE_KEY);
+        if (stored) {
+            const parsed = JSON.parse(stored);
+            if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        }
+    } catch (e) {
+        console.warn('Failed to load presets from localStorage:', e);
+    }
+    // First load or invalid data: seed defaults
+    localStorage.setItem(PRESETS_STORAGE_KEY, JSON.stringify(DEFAULT_PRESETS));
+    return DEFAULT_PRESETS;
+};
+
+const savePresets = (presets: IssueFilterPreset[]): void => {
+    try {
+        localStorage.setItem(PRESETS_STORAGE_KEY, JSON.stringify(presets));
+    } catch (e) {
+        console.warn('Failed to save presets to localStorage:', e);
+    }
+};
+
 const Issues: React.FC = () => {
     const [issues, setIssues] = useState<ReportedIssue[]>([]);
     const [loading, setLoading] = useState(true);
@@ -41,15 +106,58 @@ const Issues: React.FC = () => {
     // Filter & Sort State
     const [filterApp, setFilterApp] = useState<string>('all');
     const [filterType, setFilterType] = useState<string>('all');
-    const [filterStatus, setFilterStatus] = useState<string>('all');
+    const [filterStatuses, setFilterStatuses] = useState<string[]>([
+        ISSUE_STATUS.NEW,
+        ISSUE_STATUS.REVIEWED,
+        ISSUE_STATUS.WORKING,
+        'blocked'
+    ]);
     const [filterSeverity, setFilterSeverity] = useState<string>('all');
     const [filterPlatform, setFilterPlatform] = useState<string>('all');
     const [searchUser, setSearchUser] = useState<string>('');
     const [filterClassification, setFilterClassification] = useState<string>('all');
     const [filterAssignee, setFilterAssignee] = useState<string>('all');
-    const [sortOrder, setSortOrder] = useState<'newest' | 'oldest' | 'issue_id_desc' | 'issue_id_asc' | 'severity_desc' | 'severity_asc' | 'type_asc' | 'type_desc' | 'classification_risk' | 'organized' | 'assignee_asc' | 'assignee_desc'>('newest');
+    const [sortOrder, setSortOrder] = useState<'newest' | 'oldest' | 'issue_id_desc' | 'issue_id_asc' | 'severity_desc' | 'severity_asc' | 'type_asc' | 'type_desc' | 'classification_risk' | 'organized' | 'assignee_asc' | 'assignee_desc' | 'stuck_first'>('newest');
     const [categories, setCategories] = useState<IssueCategory[]>([]);
     const [isImportOpen, setIsImportOpen] = useState(false);
+
+    // Filter Presets State
+    const [presets, setPresets] = useState<IssueFilterPreset[]>(() => loadPresets());
+    const [activePresetId, setActivePresetId] = useState<string | null>(null);
+    const [isCreatingPreset, setIsCreatingPreset] = useState(false);
+    const [newPresetName, setNewPresetName] = useState('');
+
+    // Apply a preset
+    const applyPreset = (preset: IssueFilterPreset) => {
+        setFilterStatuses(preset.statuses);
+        if (preset.severity) setFilterSeverity(preset.severity);
+        setActivePresetId(preset.id);
+    };
+
+    // Save current filters as a new preset
+    const saveCurrentAsPreset = () => {
+        if (!newPresetName.trim()) return;
+        const newPreset: IssueFilterPreset = {
+            id: `custom-${Date.now()}`,
+            name: newPresetName.trim(),
+            statuses: [...filterStatuses],
+            severity: filterSeverity !== 'all' ? filterSeverity : undefined,
+        };
+        const updated = [...presets, newPreset];
+        setPresets(updated);
+        savePresets(updated);
+        setActivePresetId(newPreset.id);
+        setNewPresetName('');
+        setIsCreatingPreset(false);
+    };
+
+    // Delete a custom preset
+    const deletePreset = (id: string) => {
+        const updated = presets.filter(p => p.id !== id);
+        setPresets(updated);
+        savePresets(updated);
+        if (activePresetId === id) setActivePresetId(null);
+    };
 
     // User lookup for resolving userId → email on cards
     const [users, setUsers] = useState<{ uid: string; email: string }[]>([]);
@@ -122,12 +230,25 @@ const Issues: React.FC = () => {
     }, [issues, userMap]);
 
     // Filter Logic
+    // Helper to toggle a status in the filter array
+    const toggleStatus = (status: string) => {
+        setFilterStatuses(prev =>
+            prev.includes(status)
+                ? prev.filter(s => s !== status)
+                : [...prev, status]
+        );
+    };
+
     const filteredIssues = useMemo(() => {
+        // Empty selection = show no issues (per requirements)
+        if (filterStatuses.length === 0) return [];
+
         return issues.filter(issue => {
             if (issue.deleted) return false; // Filter out soft-deleted issues
             if (filterApp !== 'all' && issue.app !== filterApp) return false;
 
-            if (filterStatus !== 'all' && resolveStatus(issue.status) !== filterStatus) return false;
+            // Multi-status filter: issue must match one of the selected statuses
+            if (!filterStatuses.includes(resolveStatus(issue.status))) return false;
 
             if (filterType !== 'all' && issue.type !== filterType) return false;
 
@@ -256,475 +377,599 @@ const Issues: React.FC = () => {
                 return sortOrder === 'assignee_asc' ? cmp : -cmp;
             }
 
+            // Stuck First: sort by days in current status (descending)
+            if (sortOrder === 'stuck_first') {
+                const daysA = getDaysInStatus(a);
+                const daysB = getDaysInStatus(b);
+                if (daysA !== daysB) return daysB - daysA; // Descending (oldest first)
+                // Tie-breaker: newest created first
+                return getMillis(b) - getMillis(a);
+            }
+
             const dateA = getMillis(a);
             const dateB = getMillis(b);
             return sortOrder === 'newest' ? dateB - dateA : dateA - dateB;
         });
-}, [issues, filterApp, filterType, filterStatus, filterSeverity, filterClassification, filterAssignee, filterPlatform, searchUser, sortOrder, userMap]);
+    }, [issues, filterApp, filterType, filterStatuses, filterSeverity, filterClassification, filterAssignee, filterPlatform, searchUser, sortOrder, userMap]);
 
 
 
-const handleAssignIds = async () => {
-    setIsAssigning(true);
-    try {
-        const count = await assignMissingIssueIds();
-        if (count > 0) {
-            alert(`Assigned IDs to ${count} issues.`);
-        } else {
-            alert("No missing IDs found.");
+    const handleAssignIds = async () => {
+        setIsAssigning(true);
+        try {
+            const count = await assignMissingIssueIds();
+            if (count > 0) {
+                alert(`Assigned IDs to ${count} issues.`);
+            } else {
+                alert("No missing IDs found.");
+            }
+        } catch (error) {
+            console.error("Failed to assign IDs:", error);
+            alert("Failed to assign IDs. Check console.");
+        } finally {
+            setIsAssigning(false);
         }
-    } catch (error) {
-        console.error("Failed to assign IDs:", error);
-        alert("Failed to assign IDs. Check console.");
-    } finally {
-        setIsAssigning(false);
-    }
-};
+    };
 
-const handleRepairIds = async () => {
-    setIsAssigning(true);
-    try {
-        const result = await repairDuplicateIssueIds();
-        if (result.fixed > 0) {
-            alert(`Repaired ${result.fixed} duplicate IDs:\n${result.log.join('\n')}`);
-        } else {
-            alert(result.log[0]);
+    const handleRepairIds = async () => {
+        setIsAssigning(true);
+        try {
+            const result = await repairDuplicateIssueIds();
+            if (result.fixed > 0) {
+                alert(`Repaired ${result.fixed} duplicate IDs:\n${result.log.join('\n')}`);
+            } else {
+                alert(result.log[0]);
+            }
+        } catch (error) {
+            console.error("Failed to repair IDs:", error);
+            alert("Failed to repair IDs. Check console.");
+        } finally {
+            setIsAssigning(false);
         }
-    } catch (error) {
-        console.error("Failed to repair IDs:", error);
-        alert("Failed to repair IDs. Check console.");
-    } finally {
-        setIsAssigning(false);
+    };
+
+    const handleExport = () => {
+        const exportData = issues.map(i => ({
+            id: i.id,
+            app: i.app,
+            summary: i.message || i.description || 'No Description',
+            severity: i.severity || 'S3',
+            classification: i.classification || 'unclassified',
+            status: i.status || 'new',
+            createdAt: i.createdAt?.toDate?.()?.toISOString() || i.timestamp?.toDate?.()?.toISOString() || null,
+            lastUpdated: i.updatedAt?.toDate?.()?.toISOString() || null,
+            adminNotes: i.notes?.map(n => n.text) || []
+        }));
+
+        const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `issues-export-${new Date().toISOString().split('T')[0]}.json`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    };
+
+    const TYPE_COLORS = [
+        'bg-red-500/10 text-red-500 border-red-500/20',
+        'bg-amber-500/10 text-amber-500 border-amber-500/20',
+        'bg-blue-500/10 text-blue-500 border-blue-500/20',
+        'bg-purple-500/10 text-purple-500 border-purple-500/20',
+        'bg-teal-500/10 text-teal-500 border-teal-500/20',
+        'bg-pink-500/10 text-pink-500 border-pink-500/20',
+        'bg-indigo-500/10 text-indigo-500 border-indigo-500/20',
+        'bg-emerald-500/10 text-emerald-500 border-emerald-500/20',
+        'bg-orange-500/10 text-orange-500 border-orange-500/20',
+        'bg-cyan-500/10 text-cyan-500 border-cyan-500/20',
+    ];
+
+    const getTypeColor = (type: string) => {
+        if (!type) return 'bg-slate-800 text-slate-400';
+        // Deterministic color based on string hash
+        let hash = 0;
+        for (let i = 0; i < type.length; i++) {
+            hash = ((hash << 5) - hash) + type.charCodeAt(i);
+            hash |= 0;
+        }
+        return TYPE_COLORS[Math.abs(hash) % TYPE_COLORS.length];
+    };
+
+    const getSeverityColor = (sev?: string) => {
+        const s = sev || 'S3'; // Default to S3
+        switch (s) {
+            case 'S1': return 'bg-red-600 text-white border-red-500 font-bold'; // Critical
+            case 'S2': return 'bg-orange-500/20 text-orange-400 border-orange-500/30'; // High
+            case 'S3': return 'bg-yellow-500/10 text-yellow-500 border-yellow-500/20'; // Medium (Default)
+            case 'S4': return 'bg-slate-800 text-slate-400 border-slate-700'; // Low
+            default: return 'bg-slate-800 text-slate-400';
+        }
+    };
+
+    const getStatusColor = (status: string) => {
+        return getStatusColorConstant(status);
+    };
+
+    const getClassificationColor = (cls?: string) => {
+        if (!cls || (cls as string) === 'unclassified') return 'bg-slate-800/50 text-slate-500 border-slate-700/50';
+        switch (cls) {
+            case 'blocking': return 'bg-red-500/10 text-red-500 border-red-500/20';
+            case 'misleading': return 'bg-orange-500/10 text-orange-500 border-orange-500/20';
+            case 'trust': return 'bg-pink-500/10 text-pink-500 border-pink-500/20';
+            case 'cosmetic': return 'bg-teal-500/10 text-teal-500 border-teal-500/20';
+            default: return 'bg-slate-800 text-slate-400';
+        }
+    };
+
+    if (loading) {
+        return (
+            <div className="flex items-center justify-center min-h-[400px]">
+                <Loader2 className="w-8 h-8 text-brand-500 animate-spin" />
+            </div>
+        );
     }
-};
 
-const handleExport = () => {
-    const exportData = issues.map(i => ({
-        id: i.id,
-        app: i.app,
-        summary: i.message || i.description || 'No Description',
-        severity: i.severity || 'S3',
-        classification: i.classification || 'unclassified',
-        status: i.status || 'new',
-        createdAt: i.createdAt?.toDate?.()?.toISOString() || i.timestamp?.toDate?.()?.toISOString() || null,
-        lastUpdated: i.updatedAt?.toDate?.()?.toISOString() || null,
-        adminNotes: i.notes?.map(n => n.text) || []
-    }));
-
-    const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `issues-export-${new Date().toISOString().split('T')[0]}.json`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-};
-
-const TYPE_COLORS = [
-    'bg-red-500/10 text-red-500 border-red-500/20',
-    'bg-amber-500/10 text-amber-500 border-amber-500/20',
-    'bg-blue-500/10 text-blue-500 border-blue-500/20',
-    'bg-purple-500/10 text-purple-500 border-purple-500/20',
-    'bg-teal-500/10 text-teal-500 border-teal-500/20',
-    'bg-pink-500/10 text-pink-500 border-pink-500/20',
-    'bg-indigo-500/10 text-indigo-500 border-indigo-500/20',
-    'bg-emerald-500/10 text-emerald-500 border-emerald-500/20',
-    'bg-orange-500/10 text-orange-500 border-orange-500/20',
-    'bg-cyan-500/10 text-cyan-500 border-cyan-500/20',
-];
-
-const getTypeColor = (type: string) => {
-    if (!type) return 'bg-slate-800 text-slate-400';
-    // Deterministic color based on string hash
-    let hash = 0;
-    for (let i = 0; i < type.length; i++) {
-        hash = ((hash << 5) - hash) + type.charCodeAt(i);
-        hash |= 0;
-    }
-    return TYPE_COLORS[Math.abs(hash) % TYPE_COLORS.length];
-};
-
-const getSeverityColor = (sev?: string) => {
-    const s = sev || 'S3'; // Default to S3
-    switch (s) {
-        case 'S1': return 'bg-red-600 text-white border-red-500 font-bold'; // Critical
-        case 'S2': return 'bg-orange-500/20 text-orange-400 border-orange-500/30'; // High
-        case 'S3': return 'bg-yellow-500/10 text-yellow-500 border-yellow-500/20'; // Medium (Default)
-        case 'S4': return 'bg-slate-800 text-slate-400 border-slate-700'; // Low
-        default: return 'bg-slate-800 text-slate-400';
-    }
-};
-
-const getStatusColor = (status: string) => {
-    return getStatusColorConstant(status);
-};
-
-const getClassificationColor = (cls?: string) => {
-    if (!cls || (cls as string) === 'unclassified') return 'bg-slate-800/50 text-slate-500 border-slate-700/50';
-    switch (cls) {
-        case 'blocking': return 'bg-red-500/10 text-red-500 border-red-500/20';
-        case 'misleading': return 'bg-orange-500/10 text-orange-500 border-orange-500/20';
-        case 'trust': return 'bg-pink-500/10 text-pink-500 border-pink-500/20';
-        case 'cosmetic': return 'bg-teal-500/10 text-teal-500 border-teal-500/20';
-        default: return 'bg-slate-800 text-slate-400';
-    }
-};
-
-if (loading) {
     return (
-        <div className="flex items-center justify-center min-h-[400px]">
-            <Loader2 className="w-8 h-8 text-brand-500 animate-spin" />
-        </div>
-    );
-}
+        <div className="space-y-6">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div>
+                    <h1 className="text-3xl font-bold text-white tracking-tight">Reported Issues</h1>
+                    <div className="text-sm text-slate-500 mt-1">
+                        Showing {filteredIssues.length} of {issues.length} issues (Limit: 100)
+                    </div>
+                </div>
 
-return (
-    <div className="space-y-6">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-            <div>
-                <h1 className="text-3xl font-bold text-white tracking-tight">Reported Issues</h1>
-                <div className="text-sm text-slate-500 mt-1">
-                    Showing {filteredIssues.length} of {issues.length} issues (Limit: 100)
+                <div className="flex items-center gap-3">
+                    <input
+                        type="text"
+                        placeholder="Search User ID or Email..."
+                        value={searchUser}
+                        onChange={(e) => setSearchUser(e.target.value)}
+                        className="bg-slate-900 border border-slate-700 text-slate-300 text-sm rounded-lg p-2.5 focus:ring-brand-500 focus:border-brand-500 w-64"
+                    />
+
+                    <button
+                        onClick={handleExport}
+                        className="p-2 bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white rounded-lg transition-colors self-start md:self-center flex items-center gap-2"
+                        title="Export Issues (JSON)"
+                    >
+                        <Download className="w-5 h-5" />
+                        <span className="sr-only md:not-sr-only text-xs font-medium">Export</span>
+                    </button>
+
+                    <button
+                        onClick={() => setIsImportOpen(true)}
+                        className="p-2 bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white rounded-lg transition-colors self-start md:self-center flex items-center gap-2"
+                        title="Import Issues (CSV/JSON)"
+                    >
+                        <Upload className="w-5 h-5" />
+                        <span className="sr-only md:not-sr-only text-xs font-medium">Import</span>
+                    </button>
+
+                    <button
+                        onClick={() => setIsReviewPanelOpen(!isReviewPanelOpen)}
+                        className={`p-2 rounded-lg transition-colors flex items-center gap-2 ${isReviewPanelOpen
+                            ? 'bg-purple-900/50 text-purple-300 ring-2 ring-purple-500/50'
+                            : 'bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white'
+                            }`}
+                        title="Toggle Operator Review Mode"
+                    >
+                        <span className="text-lg">🧠</span>
+                        <span className="hidden md:inline text-xs font-medium">Operator Review</span>
+                    </button>
+
+                    <button
+                        onClick={() => setSortOrder('organized')}
+                        className={`p-2 rounded-lg transition-colors flex items-center gap-2 ${sortOrder === 'organized'
+                            ? 'bg-brand-500 text-white shadow-lg shadow-brand-500/30 ring-2 ring-brand-400'
+                            : 'bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white'
+                            }`}
+                        title="Organize by Priority (Status > Severity > Age)"
+                    >
+                        <Filter className="w-5 h-5" />
+                        <span className="hidden md:inline text-xs font-medium">Organize</span>
+                    </button>
+
+                    <button
+                        onClick={() => setSortOrder(sortOrder === 'stuck_first' ? 'newest' : 'stuck_first')}
+                        className={`p-2 rounded-lg transition-colors flex items-center gap-2 ${sortOrder === 'stuck_first'
+                            ? 'bg-amber-500/20 text-amber-400 border border-amber-500/40 ring-2 ring-amber-500/30'
+                            : 'bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white'
+                            }`}
+                        title="Sort by time in current status (oldest first)"
+                    >
+                        <span className="text-base">⏱️</span>
+                        <span className="hidden md:inline text-xs font-medium">Stuck First</span>
+                    </button>
+
+                    <button
+                        onClick={handleAssignIds}
+                        disabled={isAssigning || !issues.some(i => !i.displayId || i.displayId === 'ID_MISSING')}
+                        className={`p-2 rounded-lg transition-colors flex items-center gap-2 ${(isAssigning || !issues.some(i => !i.displayId || i.displayId === 'ID_MISSING'))
+                            ? 'bg-slate-800/50 text-slate-600 cursor-not-allowed'
+                            : 'bg-brand-600 hover:bg-brand-500 text-white shadow-lg shadow-brand-500/20'
+                            }`}
+                        title="Assign EC-### IDs to missing issues"
+                    >
+                        {isAssigning ? <Loader2 className="w-5 h-5 animate-spin" /> : <RefreshCw className="w-5 h-5 rotate-90" />}
+                        <span className="hidden md:inline text-xs font-medium">Assign IDs</span>
+                    </button>
+
+                    <button
+                        onClick={handleRepairIds}
+                        disabled={isAssigning}
+                        className={`p-2 rounded-lg transition-colors flex items-center gap-2 ${isAssigning
+                            ? 'bg-slate-800/50 text-slate-600 cursor-not-allowed'
+                            : 'bg-amber-900/60 hover:bg-amber-800/70 text-amber-300 border border-amber-700/40'
+                            }`}
+                        title="Repair duplicate EC-### IDs (one-time)"
+                    >
+                        {isAssigning ? <Loader2 className="w-5 h-5 animate-spin" /> : <AlertCircle className="w-5 h-5" />}
+                        <span className="hidden md:inline text-xs font-medium">Repair IDs</span>
+                    </button>
+
+                    <button
+                        onClick={fetchIssues}
+                        className="p-2 bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white rounded-lg transition-colors self-start md:self-center"
+                        title="Refresh Issues"
+                    >
+                        <RefreshCw className="w-5 h-5" />
+                    </button>
                 </div>
             </div>
 
-            <div className="flex items-center gap-3">
-                <input
-                    type="text"
-                    placeholder="Search User ID or Email..."
-                    value={searchUser}
-                    onChange={(e) => setSearchUser(e.target.value)}
-                    className="bg-slate-900 border border-slate-700 text-slate-300 text-sm rounded-lg p-2.5 focus:ring-brand-500 focus:border-brand-500 w-64"
-                />
-
-                <button
-                    onClick={handleExport}
-                    className="p-2 bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white rounded-lg transition-colors self-start md:self-center flex items-center gap-2"
-                    title="Export Issues (JSON)"
-                >
-                    <Download className="w-5 h-5" />
-                    <span className="sr-only md:not-sr-only text-xs font-medium">Export</span>
-                </button>
-
-                <button
-                    onClick={() => setIsImportOpen(true)}
-                    className="p-2 bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white rounded-lg transition-colors self-start md:self-center flex items-center gap-2"
-                    title="Import Issues (CSV/JSON)"
-                >
-                    <Upload className="w-5 h-5" />
-                    <span className="sr-only md:not-sr-only text-xs font-medium">Import</span>
-                </button>
-
-                <button
-                    onClick={() => setIsReviewPanelOpen(!isReviewPanelOpen)}
-                    className={`p-2 rounded-lg transition-colors flex items-center gap-2 ${isReviewPanelOpen
-                        ? 'bg-purple-900/50 text-purple-300 ring-2 ring-purple-500/50'
-                        : 'bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white'
-                        }`}
-                    title="Toggle Operator Review Mode"
-                >
-                    <span className="text-lg">🧠</span>
-                    <span className="hidden md:inline text-xs font-medium">Operator Review</span>
-                </button>
-
-                <button
-                    onClick={() => setSortOrder('organized')}
-                    className={`p-2 rounded-lg transition-colors flex items-center gap-2 ${sortOrder === 'organized'
-                        ? 'bg-brand-500 text-white shadow-lg shadow-brand-500/30 ring-2 ring-brand-400'
-                        : 'bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white'
-                        }`}
-                    title="Organize by Priority (Status > Severity > Age)"
-                >
-                    <Filter className="w-5 h-5" />
-                    <span className="hidden md:inline text-xs font-medium">Organize</span>
-                </button>
-
-                <button
-                    onClick={handleAssignIds}
-                    disabled={isAssigning || !issues.some(i => !i.displayId || i.displayId === 'ID_MISSING')}
-                    className={`p-2 rounded-lg transition-colors flex items-center gap-2 ${(isAssigning || !issues.some(i => !i.displayId || i.displayId === 'ID_MISSING'))
-                        ? 'bg-slate-800/50 text-slate-600 cursor-not-allowed'
-                        : 'bg-brand-600 hover:bg-brand-500 text-white shadow-lg shadow-brand-500/20'
-                        }`}
-                    title="Assign EC-### IDs to missing issues"
-                >
-                    {isAssigning ? <Loader2 className="w-5 h-5 animate-spin" /> : <RefreshCw className="w-5 h-5 rotate-90" />}
-                    <span className="hidden md:inline text-xs font-medium">Assign IDs</span>
-                </button>
-
-                <button
-                    onClick={handleRepairIds}
-                    disabled={isAssigning}
-                    className={`p-2 rounded-lg transition-colors flex items-center gap-2 ${isAssigning
-                        ? 'bg-slate-800/50 text-slate-600 cursor-not-allowed'
-                        : 'bg-amber-900/60 hover:bg-amber-800/70 text-amber-300 border border-amber-700/40'
-                        }`}
-                    title="Repair duplicate EC-### IDs (one-time)"
-                >
-                    {isAssigning ? <Loader2 className="w-5 h-5 animate-spin" /> : <AlertCircle className="w-5 h-5" />}
-                    <span className="hidden md:inline text-xs font-medium">Repair IDs</span>
-                </button>
-
-                <button
-                    onClick={fetchIssues}
-                    className="p-2 bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white rounded-lg transition-colors self-start md:self-center"
-                    title="Refresh Issues"
-                >
-                    <RefreshCw className="w-5 h-5" />
-                </button>
-            </div>
-        </div>
-
-        {/* Toolbar */}
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 flex flex-col md:flex-row gap-4 items-center flex-wrap">
-            <div className="flex items-center gap-2 text-slate-400 text-sm font-medium w-full md:w-auto">
-                <Filter className="w-4 h-4" />
-                <span>Filters:</span>
+            {/* Filter Presets Bar */}
+            <div className="bg-slate-900/50 border border-slate-800 rounded-xl p-3 flex flex-wrap items-center gap-2">
+                <span className="text-xs text-slate-500 font-medium mr-1">Quick Filters:</span>
+                {presets.map(preset => (
+                    <div key={preset.id} className="inline-flex items-center">
+                        <button
+                            onClick={() => applyPreset(preset)}
+                            className={`px-3 py-1.5 text-xs font-medium rounded-l-lg border transition-colors ${activePresetId === preset.id
+                                ? 'bg-brand-500/20 text-brand-400 border-brand-500/40'
+                                : 'bg-slate-800 text-slate-400 border-slate-700 hover:border-slate-600 hover:text-white'
+                                }`}
+                        >
+                            {preset.name}
+                        </button>
+                        {preset.id.startsWith('custom-') && (
+                            <button
+                                onClick={() => deletePreset(preset.id)}
+                                className="px-1.5 py-1.5 text-xs bg-slate-800 text-slate-500 border border-l-0 border-slate-700 rounded-r-lg hover:text-red-400 hover:border-red-500/40"
+                                title="Delete preset"
+                            >
+                                ×
+                            </button>
+                        )}
+                        {!preset.id.startsWith('custom-') && (
+                            <span className="px-0.5"></span>
+                        )}
+                    </div>
+                ))}
+                <div className="ml-auto flex items-center gap-2">
+                    {isCreatingPreset ? (
+                        <>
+                            <input
+                                type="text"
+                                value={newPresetName}
+                                onChange={(e) => setNewPresetName(e.target.value)}
+                                onKeyDown={(e) => e.key === 'Enter' && saveCurrentAsPreset()}
+                                placeholder="Preset name..."
+                                className="px-2 py-1 text-xs bg-slate-950 border border-slate-700 rounded text-slate-300 focus:border-brand-500 focus:outline-none w-32"
+                                autoFocus
+                            />
+                            <button
+                                onClick={saveCurrentAsPreset}
+                                disabled={!newPresetName.trim()}
+                                className="px-2 py-1 text-xs bg-brand-600 text-white rounded hover:bg-brand-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                                Save
+                            </button>
+                            <button
+                                onClick={() => { setIsCreatingPreset(false); setNewPresetName(''); }}
+                                className="px-2 py-1 text-xs text-slate-400 hover:text-white"
+                            >
+                                Cancel
+                            </button>
+                        </>
+                    ) : (
+                        <button
+                            onClick={() => setIsCreatingPreset(true)}
+                            className="px-2 py-1 text-xs text-slate-500 hover:text-slate-300 border border-slate-700 rounded hover:border-slate-600"
+                        >
+                            + Save Current
+                        </button>
+                    )}
+                </div>
             </div>
 
-            {/* App Filter */}
-            <select
-                value={filterApp}
-                onChange={(e) => setFilterApp(e.target.value)}
-                className="bg-slate-950 border border-slate-800 text-slate-300 text-sm rounded-lg focus:ring-brand-500 focus:border-brand-500 block w-full md:w-auto p-2.5"
-            >
-                <option value="all">All Apps</option>
-                {uniqueApps.map(app => (
-                    <option key={app} value={app}>{app}</option>
-                ))}
-            </select>
+            {/* Toolbar */}
+            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 flex flex-col md:flex-row gap-4 items-center flex-wrap">
+                <div className="flex items-center gap-2 text-slate-400 text-sm font-medium w-full md:w-auto">
+                    <Filter className="w-4 h-4" />
+                    <span>Filters:</span>
+                </div>
 
-            {/* Status Filter */}
-            <select
-                value={filterStatus}
-                onChange={(e) => setFilterStatus(e.target.value)}
-                className="bg-slate-950 border border-slate-800 text-slate-300 text-sm rounded-lg focus:ring-brand-500 focus:border-brand-500 block w-full md:w-auto p-2.5"
-            >
-                <option value="all">All Statuses</option>
-                {ISSUE_STATUS_OPTIONS.map(opt => (
-                    <option key={opt.value} value={opt.value}>{opt.label.replace('In Progress / ', '')}</option>
-                ))}
-            </select>
-
-            {/* Type Filter */}
-            <select
-                value={filterType}
-                onChange={(e) => setFilterType(e.target.value)}
-                className="bg-slate-950 border border-slate-800 text-slate-300 text-sm rounded-lg focus:ring-brand-500 focus:border-brand-500 block w-full md:w-auto p-2.5"
-            >
-                <option value="all">All Types</option>
-                {categories.filter(c => c.status === 'active').map(cat => (
-                    <option key={cat.id} value={cat.id}>{cat.label}</option>
-                ))}
-            </select>
-
-            {/* Classification Filter */}
-            <select
-                value={filterClassification}
-                onChange={(e) => setFilterClassification(e.target.value)}
-                className="bg-slate-950 border border-slate-800 text-slate-300 text-sm rounded-lg focus:ring-brand-500 focus:border-brand-500 block w-full md:w-auto p-2.5"
-            >
-                <option value="all">Class: All</option>
-                <option value="blocking">Blocking</option>
-                <option value="misleading">Misleading</option>
-                <option value="trust">Trust</option>
-                <option value="cosmetic">Cosmetic</option>
-                <option value="unclassified">Unclassified</option>
-            </select>
-
-            {/* Severity Filter */}
-            <select
-                value={filterSeverity}
-                onChange={(e) => setFilterSeverity(e.target.value)}
-                className="bg-slate-950 border border-slate-800 text-slate-300 text-sm rounded-lg focus:ring-brand-500 focus:border-brand-500 block w-full md:w-auto p-2.5"
-            >
-                <option value="all">All Severities</option>
-                <option value="S1">S1 (Critical)</option>
-                <option value="S2">S2 (High)</option>
-                <option value="S3">S3 (Medium)</option>
-                <option value="S4">S4 (Low)</option>
-            </select>
-
-            {/* Platform Filter */}
-            <select
-                value={filterPlatform || 'all'}
-                onChange={(e) => setFilterPlatform(e.target.value)}
-                className="bg-slate-950 border border-slate-800 text-slate-300 text-sm rounded-lg focus:ring-brand-500 focus:border-brand-500 block w-full md:w-auto p-2.5"
-            >
-                <option value="all">All Platforms</option>
-                {Object.values(ISSUE_PLATFORMS).map(p => (
-                    <option key={p} value={p}>{p}</option>
-                ))}
-            </select>
-
-            {/* Assigned To Filter */}
-            <select
-                value={filterAssignee}
-                onChange={(e) => setFilterAssignee(e.target.value)}
-                className="bg-slate-950 border border-slate-800 text-slate-300 text-sm rounded-lg focus:ring-brand-500 focus:border-brand-500 block w-full md:w-auto p-2.5"
-            >
-                <option value="all">All Assignees</option>
-                {uniqueAssignees.map(name => (
-                    <option key={name} value={name}>{name}</option>
-                ))}
-            </select>
-
-            <div className="hidden md:block w-px h-6 bg-slate-800 mx-2"></div>
-
-            {/* Sort Dropdown */}
-            <div className="flex items-center gap-2 w-full md:w-auto">
-                <ArrowUpDown className="w-4 h-4 text-slate-500" />
+                {/* App Filter */}
                 <select
-                    value={sortOrder}
-                    onChange={(e) => setSortOrder(e.target.value as typeof sortOrder)}
-                    className="bg-slate-950 border border-slate-800 text-slate-300 text-sm rounded-lg focus:ring-brand-500 focus:border-brand-500 block w-full p-2.5"
+                    value={filterApp}
+                    onChange={(e) => setFilterApp(e.target.value)}
+                    className="bg-slate-950 border border-slate-800 text-slate-300 text-sm rounded-lg focus:ring-brand-500 focus:border-brand-500 block w-full md:w-auto p-2.5"
                 >
-                    <option value="newest">Newest First</option>
-                    <option value="oldest">Oldest First</option>
-                    <option value="issue_id_desc">Issue ID (High-Low)</option>
-                    <option value="issue_id_asc">Issue ID (Low-High)</option>
-                    <option value="severity_desc">Severity (High → Low)</option>
-                    <option value="severity_asc">Severity (Low → High)</option>
-                    <option value="classification_risk">Risk (Classification)</option>
-                    <option value="type_asc">Type (A → Z)</option>
-                    <option value="type_desc">Type (Z → A)</option>
-                    <option value="assignee_asc">Assigned To (A → Z)</option>
-                    <option value="assignee_desc">Assigned To (Z → A)</option>
-                    <option value="organized">Organized (Smart Sort)</option>
+                    <option value="all">All Apps</option>
+                    {uniqueApps.map(app => (
+                        <option key={app} value={app}>{app}</option>
+                    ))}
                 </select>
-            </div>
-        </div>
 
-        {filteredIssues.length === 0 ? (
-            <div className="bg-slate-900 border border-slate-800 rounded-3xl p-12 text-center">
-                <div className="w-16 h-16 bg-slate-800 rounded-full flex items-center justify-center mx-auto mb-4">
-                    <AlertCircle className="w-8 h-8 text-slate-500" />
+                {/* Status Filter - Multi-Select Pills */}
+                <div className="flex flex-wrap gap-1.5 items-center">
+                    <span className="text-xs text-slate-500 mr-1">Status:</span>
+                    {ISSUE_STATUS_OPTIONS.map(opt => (
+                        <button
+                            key={opt.value}
+                            onClick={() => toggleStatus(opt.value)}
+                            className={`px-2.5 py-1 text-xs font-medium rounded-lg border transition-colors ${filterStatuses.includes(opt.value)
+                                ? 'bg-brand-500/20 text-brand-400 border-brand-500/40'
+                                : 'bg-slate-900 text-slate-500 border-slate-700 hover:border-slate-600'
+                                }`}
+                        >
+                            {opt.label.replace('In Progress / ', '')}
+                        </button>
+                    ))}
                 </div>
-                <h3 className="text-xl font-bold text-white mb-2">No Issues Found</h3>
-                <p className="text-slate-400">Try adjusting your filters or refresh the list.</p>
+
+                {/* Type Filter */}
+                <select
+                    value={filterType}
+                    onChange={(e) => setFilterType(e.target.value)}
+                    className="bg-slate-950 border border-slate-800 text-slate-300 text-sm rounded-lg focus:ring-brand-500 focus:border-brand-500 block w-full md:w-auto p-2.5"
+                >
+                    <option value="all">All Types</option>
+                    {categories.filter(c => c.status === 'active').map(cat => (
+                        <option key={cat.id} value={cat.id}>{cat.label}</option>
+                    ))}
+                </select>
+
+                {/* Classification Filter */}
+                <select
+                    value={filterClassification}
+                    onChange={(e) => setFilterClassification(e.target.value)}
+                    className="bg-slate-950 border border-slate-800 text-slate-300 text-sm rounded-lg focus:ring-brand-500 focus:border-brand-500 block w-full md:w-auto p-2.5"
+                >
+                    <option value="all">Class: All</option>
+                    <option value="blocking">Blocking</option>
+                    <option value="misleading">Misleading</option>
+                    <option value="trust">Trust</option>
+                    <option value="cosmetic">Cosmetic</option>
+                    <option value="unclassified">Unclassified</option>
+                </select>
+
+                {/* Severity Filter */}
+                <select
+                    value={filterSeverity}
+                    onChange={(e) => setFilterSeverity(e.target.value)}
+                    className="bg-slate-950 border border-slate-800 text-slate-300 text-sm rounded-lg focus:ring-brand-500 focus:border-brand-500 block w-full md:w-auto p-2.5"
+                >
+                    <option value="all">All Severities</option>
+                    <option value="S1">S1 (Critical)</option>
+                    <option value="S2">S2 (High)</option>
+                    <option value="S3">S3 (Medium)</option>
+                    <option value="S4">S4 (Low)</option>
+                </select>
+
+                {/* Platform Filter */}
+                <select
+                    value={filterPlatform || 'all'}
+                    onChange={(e) => setFilterPlatform(e.target.value)}
+                    className="bg-slate-950 border border-slate-800 text-slate-300 text-sm rounded-lg focus:ring-brand-500 focus:border-brand-500 block w-full md:w-auto p-2.5"
+                >
+                    <option value="all">All Platforms</option>
+                    {Object.values(ISSUE_PLATFORMS).map(p => (
+                        <option key={p} value={p}>{p}</option>
+                    ))}
+                </select>
+
+                {/* Assigned To Filter */}
+                <select
+                    value={filterAssignee}
+                    onChange={(e) => setFilterAssignee(e.target.value)}
+                    className="bg-slate-950 border border-slate-800 text-slate-300 text-sm rounded-lg focus:ring-brand-500 focus:border-brand-500 block w-full md:w-auto p-2.5"
+                >
+                    <option value="all">All Assignees</option>
+                    {uniqueAssignees.map(name => (
+                        <option key={name} value={name}>{name}</option>
+                    ))}
+                </select>
+
+                <div className="hidden md:block w-px h-6 bg-slate-800 mx-2"></div>
+
+                {/* Sort Dropdown */}
+                <div className="flex items-center gap-2 w-full md:w-auto">
+                    <ArrowUpDown className="w-4 h-4 text-slate-500" />
+                    <select
+                        value={sortOrder}
+                        onChange={(e) => setSortOrder(e.target.value as typeof sortOrder)}
+                        className="bg-slate-950 border border-slate-800 text-slate-300 text-sm rounded-lg focus:ring-brand-500 focus:border-brand-500 block w-full p-2.5"
+                    >
+                        <option value="newest">Newest First</option>
+                        <option value="oldest">Oldest First</option>
+                        <option value="issue_id_desc">Issue ID (High-Low)</option>
+                        <option value="issue_id_asc">Issue ID (Low-High)</option>
+                        <option value="severity_desc">Severity (High → Low)</option>
+                        <option value="severity_asc">Severity (Low → High)</option>
+                        <option value="classification_risk">Risk (Classification)</option>
+                        <option value="type_asc">Type (A → Z)</option>
+                        <option value="type_desc">Type (Z → A)</option>
+                        <option value="assignee_asc">Assigned To (A → Z)</option>
+                        <option value="assignee_desc">Assigned To (Z → A)</option>
+                        <option value="organized">Organized (Smart Sort)</option>
+                    </select>
+                </div>
             </div>
-        ) : (
-            <div className="grid gap-4">
-                {filteredIssues.map(issue => (
-                    <div key={issue.id} className="bg-slate-900 border border-slate-800 rounded-2xl p-6 transition-all hover:border-slate-700">
-                        <div className="flex flex-col md:flex-row gap-6">
-                            {/* Left: Meta */}
-                            <div className="w-full md:w-48 shrink-0 space-y-3">
-                                <div className="flex gap-2 flex-wrap">
-                                    <div className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${getTypeColor(issue.type)} capitalize`}>
-                                        {categories.find(c => c.id === issue.type)?.label || issue.type}
-                                    </div>
-                                    <div className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${getSeverityColor(issue.severity)}`}>
-                                        {issue.severity || 'S3'}
-                                    </div>
-                                    <div className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${getStatusColor(resolveStatus(issue.status))} capitalize`}>
-                                        {resolveStatus(issue.status)}
-                                    </div>
-                                    {(issue.classification && (issue.classification as string) !== 'unclassified') && (
-                                        <div className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${getClassificationColor(issue.classification)} capitalize`}>
-                                            {issue.classification}
+
+            {/* Status Filter Summary */}
+            {filterStatuses.length > 0 ? (
+                <div className="text-sm text-slate-400">
+                    Showing issues with status: {filterStatuses.map(s =>
+                        ISSUE_STATUS_OPTIONS.find(opt => opt.value === s)?.label || s
+                    ).join(', ')}
+                </div>
+            ) : (
+                <div className="text-sm text-amber-400 font-medium">
+                    ⚠️ Select at least one status
+                </div>
+            )}
+
+            {filteredIssues.length === 0 ? (
+                <div className="bg-slate-900 border border-slate-800 rounded-3xl p-12 text-center">
+                    <div className="w-16 h-16 bg-slate-800 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <AlertCircle className="w-8 h-8 text-slate-500" />
+                    </div>
+                    <h3 className="text-xl font-bold text-white mb-2">No Issues Found</h3>
+                    <p className="text-slate-400">
+                        {filterStatuses.length === 0
+                            ? 'Select at least one status to view issues.'
+                            : 'Try adjusting your filters or refresh the list.'}
+                    </p>
+                </div>
+            ) : (
+                <div className="grid gap-4">
+                    {filteredIssues.map(issue => (
+                        <div key={issue.id} className="bg-slate-900 border border-slate-800 rounded-2xl p-6 transition-all hover:border-slate-700">
+                            <div className="flex flex-col md:flex-row gap-6">
+                                {/* Left: Meta */}
+                                <div className="w-full md:w-48 shrink-0 space-y-3">
+                                    <div className="flex gap-2 flex-wrap">
+                                        <div className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${getTypeColor(issue.type)} capitalize`}>
+                                            {categories.find(c => c.id === issue.type)?.label || issue.type}
                                         </div>
-                                    )}
-                                    {issue.platform && (
-                                        <div className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border border-slate-700 bg-slate-800 text-slate-400 capitalize`}>
-                                            {issue.platform}
+                                        <div className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${getSeverityColor(issue.severity)}`}>
+                                            {issue.severity || 'S3'}
                                         </div>
-                                    )}
-                                </div>
-                                <div className="flex items-center gap-2 text-slate-400 text-sm">
-                                    <Calendar className="w-4 h-4" />
-                                    <span>
-                                        {formatDate(issue.timestamp || issue.createdAt)}
-                                    </span>
-                                </div>
-                                <div className="flex items-center gap-2 text-slate-400 text-sm">
-                                    <User className="w-4 h-4" />
-                                    <span className="truncate max-w-[150px]" title={resolveAssignee(issue.userId)}>
-                                        {resolveAssignee(issue.userId)}
-                                    </span>
-                                </div>
-                                <div className="text-xs text-brand-400 font-mono font-bold">
-                                    {(!issue.displayId || issue.displayId === 'ID_MISSING') ? (
-                                        <span className="text-slate-500 animate-pulse">Assigning ID...</span>
-                                    ) : (
-                                        issue.displayId
-                                    )}
-                                </div>
-                                <div className="text-xs text-slate-500 uppercase tracking-wider font-bold">
-                                    {issue.app}
-                                </div>
-                            </div>
-
-                            {/* Right: Content */}
-                            <div className="flex-1 space-y-4">
-                                <p className="text-slate-300 leading-relaxed">
-                                    {issue.description || issue.message}
-                                </p>
-
-                                {issue.url && (
-                                    <a href={issue.url} target="_blank" rel="noopener noreferrer"
-                                        className="inline-flex items-center gap-2 text-sm text-brand-400 hover:text-brand-300">
-                                        <ExternalLink className="w-4 h-4" />
-                                        Context URL
-                                    </a>
-                                )}
-
-                                {/* Notes Section */}
-                                {issue.notes && issue.notes.length > 0 && (
-                                    <div className="bg-slate-950/50 rounded-xl p-4 space-y-3 border border-slate-800/50">
-                                        <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider">Admin Notes</h4>
-                                        {issue.notes.map((note, idx) => (
-                                            <div key={idx} className="text-sm text-slate-400 pl-3 border-l-2 border-slate-700">
-                                                {note.text}
-                                                <span className="ml-2 text-xs text-slate-600">
-                                                    - {formatDate(note.createdAt)}
-                                                </span>
+                                        <div className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${getStatusColor(resolveStatus(issue.status))} capitalize`}>
+                                            {resolveStatus(issue.status)}
+                                        </div>
+                                        {/* State Drift Indicator */}
+                                        {(() => {
+                                            const days = getDaysInStatus(issue);
+                                            const drift = getDriftLevel(resolveStatus(issue.status), days);
+                                            if (days === 0) return null;
+                                            return (
+                                                <div className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${drift === 'critical'
+                                                    ? 'bg-red-500/20 text-red-400 border border-red-500/40'
+                                                    : drift === 'warning'
+                                                        ? 'bg-amber-500/20 text-amber-400 border border-amber-500/40'
+                                                        : 'bg-slate-800/50 text-slate-500 border border-slate-700/50'
+                                                    }`}>
+                                                    {days}d {drift === 'critical' && '🚨'}{drift === 'warning' && '⚠️'}
+                                                </div>
+                                            );
+                                        })()}
+                                        {(issue.classification && (issue.classification as string) !== 'unclassified') && (
+                                            <div className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${getClassificationColor(issue.classification)} capitalize`}>
+                                                {issue.classification}
                                             </div>
-                                        ))}
+                                        )}
+                                        {issue.platform && (
+                                            <div className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border border-slate-700 bg-slate-800 text-slate-400 capitalize`}>
+                                                {issue.platform}
+                                            </div>
+                                        )}
                                     </div>
-                                )}
+                                    <div className="flex items-center gap-2 text-slate-400 text-sm">
+                                        <Calendar className="w-4 h-4" />
+                                        <span>
+                                            {formatDate(issue.timestamp || issue.createdAt)}
+                                        </span>
+                                    </div>
+                                    <div className="flex items-center gap-2 text-slate-400 text-sm">
+                                        <User className="w-4 h-4" />
+                                        <span className="truncate max-w-[150px]" title={resolveAssignee(issue.userId)}>
+                                            {resolveAssignee(issue.userId)}
+                                        </span>
+                                    </div>
+                                    <div className="text-xs text-brand-400 font-mono font-bold">
+                                        {(!issue.displayId || issue.displayId === 'ID_MISSING') ? (
+                                            <span className="text-slate-500 animate-pulse">Assigning ID...</span>
+                                        ) : (
+                                            issue.displayId
+                                        )}
+                                    </div>
+                                    <div className="text-xs text-slate-500 uppercase tracking-wider font-bold">
+                                        {issue.app}
+                                    </div>
+                                </div>
 
-                                <div className="pt-2 flex items-center gap-3">
-                                    <button
-                                        onClick={() => setSelectedIssue(issue)}
-                                        className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 text-sm rounded-lg transition-colors font-medium border border-slate-700"
-                                    >
-                                        View Full Details
-                                    </button>
+                                {/* Right: Content */}
+                                <div className="flex-1 space-y-4">
+                                    <p className="text-slate-300 leading-relaxed">
+                                        {issue.description || issue.message}
+                                    </p>
 
+                                    {issue.url && (
+                                        <a href={issue.url} target="_blank" rel="noopener noreferrer"
+                                            className="inline-flex items-center gap-2 text-sm text-brand-400 hover:text-brand-300">
+                                            <ExternalLink className="w-4 h-4" />
+                                            Context URL
+                                        </a>
+                                    )}
+
+                                    {/* Notes Section */}
+                                    {issue.notes && issue.notes.length > 0 && (
+                                        <div className="bg-slate-950/50 rounded-xl p-4 space-y-3 border border-slate-800/50">
+                                            <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider">Admin Notes</h4>
+                                            {issue.notes.map((note, idx) => (
+                                                <div key={idx} className="text-sm text-slate-400 pl-3 border-l-2 border-slate-700">
+                                                    {note.text}
+                                                    <span className="ml-2 text-xs text-slate-600">
+                                                        - {formatDate(note.createdAt)}
+                                                    </span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+
+                                    <div className="pt-2 flex items-center gap-3">
+                                        <button
+                                            onClick={() => setSelectedIssue(issue)}
+                                            className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 text-sm rounded-lg transition-colors font-medium border border-slate-700"
+                                        >
+                                            View Full Details
+                                        </button>
+
+                                    </div>
                                 </div>
                             </div>
                         </div>
-                    </div>
-                ))}
-            </div>
-        )}
+                    ))}
+                </div>
+            )}
 
-        <OperatorReviewPanel
-            isOpen={isReviewPanelOpen}
-            onClose={() => setIsReviewPanelOpen(false)}
-            issues={issues}
-            onSelectIssue={(issue) => setSelectedIssue(issue)}
-        />
-
+            <OperatorReviewPanel
+                isOpen={isReviewPanelOpen}
+                onClose={() => setIsReviewPanelOpen(false)}
+                issues={issues}
+                onSelectIssue={(issue) => setSelectedIssue(issue)}
+            />
 
 
-        {/* View Details Modal */}
-        <IssueDetailModal
-            issue={selectedIssue}
-            onClose={() => setSelectedIssue(null)}
-            onUpdate={fetchIssues}
-        />
 
-        {/* Import Issues Modal */}
-        <ImportIssuesModal
-            isOpen={isImportOpen}
-            onClose={() => setIsImportOpen(false)}
-        />
-    </div >
-);
+            {/* View Details Modal */}
+            <IssueDetailModal
+                issue={selectedIssue}
+                onClose={() => setSelectedIssue(null)}
+                onUpdate={fetchIssues}
+            />
+
+            {/* Import Issues Modal */}
+            <ImportIssuesModal
+                isOpen={isImportOpen}
+                onClose={() => setIsImportOpen(false)}
+            />
+        </div >
+    );
 };
 
 export default Issues;
