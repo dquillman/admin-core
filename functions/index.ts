@@ -189,33 +189,46 @@ export const autoExpireTesterPro = functions.pubsub.schedule("every 6 hours").on
 
 /**
  * Trigger: On Issue Creation
- * Auto-assigns a readable displayId (EC-###) if missing.
+ * Auto-assigns a readable displayId ONLY if truly missing.
+ * 
+ * CRITICAL: This trigger must respect existing displayId values with ANY valid prefix.
+ * Valid prefixes: AC- (Admin Core), EC- (Exam Coach)
+ * 
+ * If displayId is already set, this trigger does NOTHING - identity is immutable.
  */
 export const onIssueCreated = functions.firestore.document('issues/{issueId}').onCreate(async (snap, context) => {
     const newData = snap.data();
 
-    // 1. If displayId already exists, do nothing
-    if (newData.displayId && String(newData.displayId).startsWith('EC-')) {
-        return null;
+    // VALID PREFIXES - must match APP_REGISTRY in constants.ts
+    const VALID_PREFIXES = ['AC-', 'EC-'];
+
+    // 1. If displayId already exists with any valid prefix, do nothing (identity is immutable)
+    if (newData.displayId && typeof newData.displayId === 'string') {
+        const hasValidPrefix = VALID_PREFIXES.some(prefix => newData.displayId.startsWith(prefix));
+        if (hasValidPrefix) {
+            console.log(`Issue ${context.params.issueId} already has valid displayId: ${newData.displayId} - skipping`);
+            return null;
+        }
     }
 
     try {
-        // 2. Find the highest existing ID
-        // Strategy: Query recent issues (last 50) to find the max numeric portion.
-        // We rely on 'timestamp' (client) or 'createdAt' (admin) for recency.
+        // 2. Find the highest existing ID for EC- prefix (legacy/fallback only)
+        // NOTE: This trigger should ideally never run for properly created issues.
+        // The client-side createIssue() always assigns displayId.
+        // This is a safety net for issues created without displayId via other means.
         const recentSnap = await db.collection('issues')
             .orderBy('timestamp', 'desc')
-            .limit(50)
+            .limit(100) // Increased to catch more IDs
             .get();
 
         let maxId = 0;
 
         recentSnap.docs.forEach(doc => {
             const data = doc.data();
-            // Check both displayId and legacy issueId
             const idStr = data.displayId || data.issueId;
             if (idStr && typeof idStr === 'string') {
-                const match = idStr.match(/EC-(\d+)/);
+                // Match ANY valid prefix
+                const match = idStr.match(/(?:EC|AC)-(\d+)/);
                 if (match) {
                     const num = parseInt(match[1], 10);
                     if (!isNaN(num) && num > maxId) {
@@ -225,19 +238,18 @@ export const onIssueCreated = functions.firestore.document('issues/{issueId}').o
             }
         });
 
-        // 3. Increment
+        // 3. Increment and assign EC- as default (for backward compatibility with client issues)
         const nextId = maxId + 1;
         const newDisplayId = `EC-${nextId}`;
 
-        // 4. Update the document
+        // 4. Update the document - ONLY set identity fields
         await snap.ref.set({
             displayId: newDisplayId,
-            issueId: newDisplayId, // Keep legacy field in sync for now, just in case
-            timestamp: admin.firestore.FieldValue.serverTimestamp(), // Ensure query listeners fire on sort field update
+            issueId: newDisplayId,
             updatedAt: admin.firestore.FieldValue.serverTimestamp()
         }, { merge: true });
 
-        console.log(`Assigned ${newDisplayId} to issue ${context.params.issueId}`);
+        console.log(`Assigned ${newDisplayId} to issue ${context.params.issueId} (was missing)`);
         return null;
 
     } catch (error) {
@@ -245,3 +257,4 @@ export const onIssueCreated = functions.firestore.document('issues/{issueId}').o
         return null;
     }
 });
+

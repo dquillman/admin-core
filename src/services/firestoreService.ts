@@ -21,6 +21,22 @@ import type { User, TesterStats, ReportedIssue, IssueNote, IssueCategory } from 
 import { getAppPrefix, APP_KEYS } from '../constants';
 import type { AppKey } from '../constants';
 
+// ISSUE IDENTITY FIELDS - Write-once, immutable after creation
+// These fields can NEVER be modified after initial issue creation
+const IMMUTABLE_ISSUE_FIELDS = ['displayId', 'issueId', 'issue_id'] as const;
+
+// Helper to strip immutable fields from any update payload
+const stripImmutableFields = <T extends Record<string, unknown>>(updates: T): Omit<T, typeof IMMUTABLE_ISSUE_FIELDS[number]> => {
+    const safeUpdates = { ...updates };
+    for (const field of IMMUTABLE_ISSUE_FIELDS) {
+        if (field in safeUpdates) {
+            console.warn(`[IMMUTABILITY] Blocked attempt to modify identity field: ${field}`);
+            delete (safeUpdates as Record<string, unknown>)[field];
+        }
+    }
+    return safeUpdates;
+};
+
 // GLOBAL KILL SWITCH - STRICT NO AGGREGATION
 export const CLIENT_STATS_ENABLED = true; // Enabled but only for safe value reading
 
@@ -427,7 +443,9 @@ export const updateIssueStatus = async (issueId: string, status: string) => {
 
 export const updateIssueDetails = async (issueId: string, updates: { severity?: string; type?: string; classification?: string; userId?: string | null }) => {
     await requireAdmin();
-    await updateDoc(doc(db, 'issues', issueId), updates);
+    // Guard: Strip any identity fields that might be accidentally included
+    const safeUpdates = stripImmutableFields(updates);
+    await updateDoc(doc(db, 'issues', issueId), safeUpdates);
 };
 
 export const deleteIssue = async (issueId: string) => {
