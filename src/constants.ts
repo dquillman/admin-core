@@ -27,20 +27,23 @@ export const APP_REGISTRY = {
 
 export type AppKey = keyof typeof APP_REGISTRY;
 
-// Helper to get all valid app keys
-export const APP_KEYS = Object.keys(APP_REGISTRY) as AppKey[];
+// Explicit ordering of app keys (Object.keys doesn't guarantee order)
+export const APP_KEYS: AppKey[] = ['admin-core', 'exam-coach'];
 
-// Helper to get app options for dropdowns
+// Helper to get app options for dropdowns (explicit order)
 export const APP_OPTIONS = APP_KEYS.map(key => ({
     value: key,
     label: APP_REGISTRY[key].label,
     prefix: APP_REGISTRY[key].prefix
 }));
 
-// Helper to get prefix from app key
-export const getAppPrefix = (appKey: string): string => {
-    const entry = APP_REGISTRY[appKey as AppKey];
-    return entry?.prefix ?? 'EC'; // Default to EC for unknown
+// Helper to get prefix from app key - throws on unknown (no silent default)
+export const getAppPrefix = (appKey: AppKey): string => {
+    const entry = APP_REGISTRY[appKey];
+    if (!entry) {
+        throw new Error(`Unknown app key: ${appKey}. Valid keys: ${APP_KEYS.join(', ')}`);
+    }
+    return entry.prefix;
 };
 
 // Normalize legacy app values to canonical keys
