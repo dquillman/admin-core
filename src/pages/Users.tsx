@@ -148,14 +148,64 @@ const UsersPage: React.FC = () => {
 
     const exportUsersToCSV = () => {
         if (!users || users.length === 0) return;
-        const headers = Object.keys(users[0]);
-        const rows = users.map(user =>
-            headers.map(h => JSON.stringify(user[h] ?? "")).join(",")
-        );
-        const csv = [headers.join(","), ...rows].join("\n");
-        const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+
+        const CSV_HEADERS = ['First Name', 'Last Name', 'Email', 'Plan', 'Access', 'Joined', 'Status'] as const;
+
+        const resolvePlan = (u: User): string => {
+            const access = getEffectiveAccess(u);
+            if (access.type === 'tester' || access.type === 'tester_invalid') {
+                return u.plan === 'pro' ? 'Tester Pro' : 'Tester';
+            }
+            if (access.type === 'trial') return 'Trial';
+            if (access.type === 'paid') return 'Pro';
+            return 'Free';
+        };
+
+        const resolveAccess = (u: User): string => {
+            if (u.archived) return 'Archived';
+            if (u.disabled) return 'Disabled';
+            return 'Active';
+        };
+
+        const resolveStatus = (u: User): string => {
+            const access = getEffectiveAccess(u);
+            if (access.type === 'tester' || access.type === 'tester_invalid') return 'Tester';
+            if (access.type === 'trial') return 'Active';
+            if (u.trialActive === false && u.trialEndsAt) return 'Expired Trial';
+            if (u.disabled) return 'Inactive';
+            if (u.archived) return 'Inactive';
+            if (access.type === 'paid') return 'Active';
+            return 'Active';
+        };
+
+        const formatJoined = (u: User): string => {
+            try {
+                if (u.createdAt?.toDate) return u.createdAt.toDate().toISOString().slice(0, 10);
+            } catch { /* fallthrough */ }
+            return '';
+        };
+
+        const escapeCSV = (val: string): string => {
+            if (val.includes(',') || val.includes('"') || val.includes('\n')) {
+                return `"${val.replace(/"/g, '""')}"`;
+            }
+            return val;
+        };
+
+        const rows = users.map(u => [
+            u.firstName || '',
+            u.lastName || '',
+            u.email || '',
+            resolvePlan(u),
+            resolveAccess(u),
+            formatJoined(u),
+            resolveStatus(u),
+        ].map(escapeCSV).join(','));
+
+        const csv = [CSV_HEADERS.join(','), ...rows].join('\n');
+        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
         const url = URL.createObjectURL(blob);
-        const link = document.createElement("a");
+        const link = document.createElement('a');
         link.href = url;
         link.download = `users-export-${new Date().toISOString().slice(0, 10)}.csv`;
         link.click();
