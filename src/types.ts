@@ -7,6 +7,14 @@ export interface User {
     // Standard Fields
     plan?: 'starter' | 'pro';
 
+    // Profile fields (editable by admin)
+    firstName?: string;
+    lastName?: string;
+    displayName?: string;
+
+    // Auth metadata (read-only in admin)
+    authProvider?: string;
+
     // Trial (Flattened as per request)
     trialActive?: boolean;
     trialEndsAt?: Timestamp | null;
@@ -15,6 +23,11 @@ export interface User {
     isPro?: boolean;
     disabled?: boolean;
     createdAt?: Timestamp;
+
+    // Archive (soft delete, reversible)
+    archived?: boolean;
+    archivedAt?: Timestamp | null;
+    archivedBy?: string | null;
 
     // Tester Access Fields
     testerOverride?: boolean;
@@ -165,6 +178,9 @@ export interface ReportedIssue {
 
     // Category Governance
     suggestedCategory?: string; // Optional user suggestion if type is 'Uncategorized'
+
+    // Release Planning
+    plannedForVersion?: string | null; // semver from release_versions, null = not planned
 }
 
 export interface IssueCategory {
@@ -174,4 +190,14 @@ export interface IssueCategory {
     status: 'active' | 'deprecated';
     createdBy: 'system' | 'admin';
     createdAt: Timestamp;
+}
+
+export type ReleaseVersionStatus = 'planned' | 'in-progress' | 'released';
+
+export interface ReleaseVersion {
+    id: string;           // doc ID = version string (e.g. "1.15.1")
+    version: string;      // x.xx.x format
+    status: ReleaseVersionStatus;
+    createdAt: Timestamp;
+    createdBy: string;    // adminUid
 }

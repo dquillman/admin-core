@@ -15,9 +15,10 @@ import {
     setDoc,
     arrayUnion
 } from 'firebase/firestore';
+import { getFunctions, httpsCallable } from 'firebase/functions';
 import { db, auth } from '../firebase';
 import { safeGetDocs, safeGetDoc, safeGetCount } from '../utils/firestoreSafe';
-import type { User, TesterStats, ReportedIssue, IssueNote, IssueCategory } from '../types';
+import type { User, TesterStats, ReportedIssue, IssueNote, IssueCategory, ReleaseVersion, ReleaseVersionStatus } from '../types';
 import { getAppPrefix, APP_KEYS } from '../constants';
 import type { AppKey } from '../constants';
 
@@ -284,8 +285,219 @@ const pickAccessFields = (data: any) => ({
     testerOverride: data?.testerOverride ?? null,
     testerExpiresAt: data?.testerExpiresAt ?? null,
     plan: data?.plan ?? null,
-    trialActive: data?.trialActive ?? null
+    trialActive: data?.trialActive ?? null,
+    trialEndsAt: data?.trialEndsAt ?? null,
+    archived: data?.archived ?? null
 });
+
+/**
+ * Trial Access Management (Direct Writes)
+ */
+export const startTrial = async (targetUid: string) => {
+    await requireAdmin();
+    const adminUser = auth.currentUser;
+    if (!adminUser) throw new Error("Not authenticated");
+
+    const userRef = doc(db, 'users', targetUid);
+    const userSnap = await safeGetDoc(userRef, { fallback: null, context: 'Admin', description: 'Start Trial Check' });
+    if (!userSnap.exists()) throw new Error("User not found");
+
+    const userData = userSnap.data();
+    // Guard: Do not start trial for paid Pro users
+    if (userData?.plan === 'pro' && !userData?.trialActive && !userData?.trial) {
+        throw new Error("Cannot start trial for a paid Pro user");
+    }
+
+    const now = new Date();
+    const endsAt = new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000); // 14 days
+
+    const updates = {
+        trialActive: true,
+        trialEndsAt: Timestamp.fromDate(endsAt),
+    };
+
+    await updateDoc(userRef, updates);
+    await logGlobalAdminAction('START_TRIAL', targetUid, {
+        prev: pickAccessFields(userData),
+        new: updates
+    });
+};
+
+export const extendTrial = async (targetUid: string) => {
+    await requireAdmin();
+    const adminUser = auth.currentUser;
+    if (!adminUser) throw new Error("Not authenticated");
+
+    const userRef = doc(db, 'users', targetUid);
+    const userSnap = await safeGetDoc(userRef, { fallback: null, context: 'Admin', description: 'Extend Trial Check' });
+    if (!userSnap.exists()) throw new Error("User not found");
+
+    const userData = userSnap.data();
+    // Extend from current end date if still active, otherwise from now
+    const currentEnd = userData?.trialEndsAt?.toDate?.() || new Date();
+    const baseDate = currentEnd > new Date() ? currentEnd : new Date();
+    const endsAt = new Date(baseDate.getTime() + 14 * 24 * 60 * 60 * 1000);
+
+    const updates = {
+        trialActive: true,
+        trialEndsAt: Timestamp.fromDate(endsAt),
+    };
+
+    await updateDoc(userRef, updates);
+    await logGlobalAdminAction('EXTEND_TRIAL', targetUid, {
+        prev: pickAccessFields(userData),
+        new: updates
+    });
+};
+
+export const cancelTrial = async (targetUid: string) => {
+    await requireAdmin();
+
+    const userRef = doc(db, 'users', targetUid);
+    const userSnap = await safeGetDoc(userRef, { fallback: null, context: 'Admin', description: 'Cancel Trial Check' });
+    if (!userSnap.exists()) throw new Error("User not found");
+
+    const updates = {
+        trialActive: false,
+        trialEndsAt: null,
+    };
+
+    await updateDoc(userRef, updates);
+    await logGlobalAdminAction('CANCEL_TRIAL', targetUid, {
+        prev: pickAccessFields(userSnap.data()),
+        new: updates
+    });
+};
+
+/**
+ * Grant Fresh Trial (Admin Override — Direct Write)
+ * Unconditionally resets trial to a new window. No paid-user guard.
+ * App-scoped via appId for audit trail; writes to flat user fields so all apps see it.
+ */
+export const grantFreshTrial = async (targetUid: string, appId: string, days: number = 14) => {
+    await requireAdmin();
+    const adminUser = auth.currentUser;
+    if (!adminUser) throw new Error("Not authenticated");
+
+    const userRef = doc(db, 'users', targetUid);
+    const userSnap = await safeGetDoc(userRef, { fallback: null, context: 'Admin', description: 'Grant Fresh Trial Check' });
+    if (!userSnap.exists()) throw new Error("User not found");
+
+    const now = new Date();
+    const endsAt = new Date(now.getTime() + days * 24 * 60 * 60 * 1000);
+
+    const updates = {
+        trialActive: true,
+        trialEndsAt: Timestamp.fromDate(endsAt),
+    };
+
+    await updateDoc(userRef, updates);
+    await logGlobalAdminAction('GRANT_FRESH_TRIAL', targetUid, {
+        appId,
+        days,
+        grantedBy: adminUser.email || adminUser.uid,
+        prev: pickAccessFields(userSnap.data()),
+        new: updates
+    });
+};
+
+/**
+ * Archive Management (Soft Delete — Direct Writes)
+ * Archive does NOT revoke access or disable auth. It only hides from default list.
+ */
+export const archiveUser = async (targetUid: string) => {
+    await requireAdmin();
+    const adminUser = auth.currentUser;
+    if (!adminUser) throw new Error("Not authenticated");
+
+    const userRef = doc(db, 'users', targetUid);
+    const userSnap = await safeGetDoc(userRef, { fallback: null, context: 'Admin', description: 'Archive User Check' });
+    if (!userSnap.exists()) throw new Error("User not found");
+
+    const updates = {
+        archived: true,
+        archivedAt: serverTimestamp(),
+        archivedBy: adminUser.email || adminUser.uid,
+    };
+
+    await updateDoc(userRef, updates);
+    await logGlobalAdminAction('ARCHIVE_USER', targetUid, {
+        prev: pickAccessFields(userSnap.data()),
+        new: updates
+    });
+};
+
+export const restoreUser = async (targetUid: string) => {
+    await requireAdmin();
+
+    const userRef = doc(db, 'users', targetUid);
+    const userSnap = await safeGetDoc(userRef, { fallback: null, context: 'Admin', description: 'Restore User Check' });
+    if (!userSnap.exists()) throw new Error("User not found");
+
+    const updates = {
+        archived: false,
+        archivedAt: null,
+        archivedBy: null,
+    };
+
+    await updateDoc(userRef, updates);
+    await logGlobalAdminAction('RESTORE_USER', targetUid, {
+        prev: pickAccessFields(userSnap.data()),
+        new: updates
+    });
+};
+
+/**
+ * Update User Profile (Direct Write — Pattern A)
+ * Updates firstName, lastName, displayName. Skips write if nothing changed.
+ */
+export const updateUserProfile = async (
+    targetUid: string,
+    updates: { firstName?: string; lastName?: string; displayName?: string }
+) => {
+    await requireAdmin();
+    const adminUser = auth.currentUser;
+    if (!adminUser) throw new Error("Not authenticated");
+
+    const userRef = doc(db, 'users', targetUid);
+    const userSnap = await safeGetDoc(userRef, { fallback: null, context: 'Admin', description: 'Update Profile Check' });
+    if (!userSnap.exists()) throw new Error("User not found");
+
+    const userData = userSnap.data();
+
+    // Diff: only write fields that actually changed
+    const changedFields: Record<string, string> = {};
+    const prev: Record<string, string | undefined> = {};
+    for (const [key, value] of Object.entries(updates)) {
+        if (value !== undefined && value !== (userData?.[key] ?? '')) {
+            changedFields[key] = value;
+            prev[key] = userData?.[key] ?? '';
+        }
+    }
+
+    if (Object.keys(changedFields).length === 0) return;
+
+    await updateDoc(userRef, {
+        ...changedFields,
+        updatedAt: serverTimestamp(),
+    });
+
+    await logGlobalAdminAction('UPDATE_USER_PROFILE', targetUid, {
+        fieldsChanged: Object.keys(changedFields),
+        prev,
+        new: changedFields,
+    });
+};
+
+/**
+ * Admin Update Email (Cloud Function — Pattern B)
+ * Updates email in both Firebase Auth and Firestore via Cloud Function.
+ */
+export const adminUpdateEmail = async (targetUid: string, newEmail: string) => {
+    const functions = getFunctions();
+    const callable = httpsCallable(functions, 'adminUpdateUserEmail');
+    await callable({ targetUid, newEmail });
+};
 
 // --- App Config Service (App Scoped) ---
 export const getAppConfig = async (appId: string, docId: string) => {
@@ -441,7 +653,7 @@ export const updateIssueStatus = async (issueId: string, status: string) => {
     await updateDoc(doc(db, 'issues', issueId), { status });
 };
 
-export const updateIssueDetails = async (issueId: string, updates: { severity?: string; type?: string; classification?: string; userId?: string | null }) => {
+export const updateIssueDetails = async (issueId: string, updates: { severity?: string; type?: string; classification?: string; userId?: string | null; plannedForVersion?: string | null }) => {
     await requireAdmin();
     // Guard: Strip any identity fields that might be accidentally included
     const safeUpdates = stripImmutableFields(updates);
@@ -816,4 +1028,75 @@ export const seedDefaultCategories = async () => {
         await batch.commit();
     }
     return count;
+};
+
+// --- Release Version Registry ---
+
+const VERSION_REGEX = /^\d+\.\d{1,2}\.\d+$/;
+
+export const getReleaseVersions = async (): Promise<ReleaseVersion[]> => {
+    const col = collection(db, 'release_versions');
+    const q = query(col, orderBy('version', 'desc'));
+    const snap = await safeGetDocs(q, { fallback: [], context: 'Versions', description: 'Get Release Versions' });
+    return snap.docs.map(d => ({ id: d.id, ...d.data() } as ReleaseVersion));
+};
+
+export const subscribeToReleaseVersions = (onData: (versions: ReleaseVersion[]) => void): (() => void) => {
+    const col = collection(db, 'release_versions');
+    return onSnapshot(query(col, orderBy('version', 'desc')), (snapshot) => {
+        const versions = snapshot.docs.map(d => ({ id: d.id, ...d.data() } as ReleaseVersion));
+        onData(versions);
+    }, (error) => {
+        console.error("Release versions subscription error:", error);
+    });
+};
+
+export const addReleaseVersion = async (version: string) => {
+    await requireAdmin();
+    const user = auth.currentUser;
+    if (!user) throw new Error("Not authenticated");
+
+    if (!VERSION_REGEX.test(version)) {
+        throw new Error("Invalid version format. Use x.xx.x (e.g. 1.15.1)");
+    }
+
+    const docRef = doc(db, 'release_versions', version);
+    const exists = (await getDoc(docRef)).exists();
+    if (exists) throw new Error(`Version ${version} already exists`);
+
+    await setDoc(docRef, {
+        version,
+        status: 'planned',
+        createdAt: serverTimestamp(),
+        createdBy: user.uid,
+    });
+
+    await logGlobalAdminAction('ADD_RELEASE_VERSION', version, { version });
+};
+
+export const updateReleaseVersionStatus = async (versionId: string, status: ReleaseVersionStatus) => {
+    await requireAdmin();
+    await updateDoc(doc(db, 'release_versions', versionId), { status });
+    await logGlobalAdminAction('UPDATE_VERSION_STATUS', versionId, { status });
+};
+
+// --- PFV (Planned for Version) on Issues ---
+
+export const updateIssuePFV = async (issueId: string, prevPFV: string | null, newPFV: string | null) => {
+    await requireAdmin();
+
+    // Validate newPFV exists in release_versions (or is null to clear)
+    if (newPFV) {
+        const versionDoc = await getDoc(doc(db, 'release_versions', newPFV));
+        if (!versionDoc.exists()) {
+            throw new Error(`Version ${newPFV} does not exist in release_versions`);
+        }
+    }
+
+    await updateDoc(doc(db, 'issues', issueId), {
+        plannedForVersion: newPFV,
+        updatedAt: serverTimestamp(),
+    });
+
+    await logGlobalAdminAction('UPDATE_PFV', issueId, { prevPFV, newPFV });
 };

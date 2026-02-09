@@ -14,7 +14,8 @@ import {
     Filter,
     CheckCircle2,
     AlertCircle,
-    ClipboardCheck
+    ClipboardCheck,
+    Tag
 } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { AppSelector } from './AppSelector';
@@ -49,6 +50,7 @@ const Sidebar: React.FC = () => {
         { to: '/tutor-impact', icon: CheckCircle2, label: 'Tutor Impact' },
         { to: '/tutor-impact', icon: CheckCircle2, label: 'Tutor Impact' },
         ...(state.isAdmin ? [{ to: '/categories', icon: Filter, label: 'Issue Categories' }] : []),
+        ...(state.isAdmin ? [{ to: '/versions', icon: Tag, label: 'Release Versions' }] : []),
         { to: '/settings', icon: Settings, label: 'Settings' },
     ];
 

@@ -188,6 +188,46 @@ export const autoExpireTesterPro = functions.pubsub.schedule("every 6 hours").on
 });
 
 /**
+ * Admin Update User Email
+ * Updates email in both Firebase Auth and Firestore, with audit logging.
+ */
+export const adminUpdateUserEmail = functions.https.onCall(async (data, context) => {
+    await assertAdmin(context);
+    const { targetUid, newEmail } = data;
+    if (!targetUid) throw new functions.https.HttpsError("invalid-argument", "Target UID required");
+    if (!newEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(newEmail)) {
+        throw new functions.https.HttpsError("invalid-argument", "Valid email required");
+    }
+
+    const targetRef = db.collection("users").doc(targetUid);
+    const targetDoc = await targetRef.get();
+    if (!targetDoc.exists) throw new functions.https.HttpsError("not-found", "User not found");
+
+    const prevEmail = targetDoc.data()?.email || "unknown";
+
+    // 1. Update Firebase Auth
+    await admin.auth().updateUser(targetUid, { email: newEmail });
+
+    // 2. Update Firestore
+    await targetRef.update({
+        email: newEmail,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp()
+    });
+
+    // 3. Audit log
+    await db.collection("admin_audit").add({
+        action: "ADMIN_UPDATE_EMAIL",
+        adminUid: context.auth?.uid,
+        targetUserId: targetUid,
+        prevEmail,
+        newEmail,
+        createdAt: admin.firestore.FieldValue.serverTimestamp()
+    });
+
+    return { success: true };
+});
+
+/**
  * Trigger: On Issue Creation
  * Auto-assigns a readable displayId ONLY if truly missing.
  * 

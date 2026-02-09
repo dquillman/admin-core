@@ -18,6 +18,7 @@ import Issues from './pages/Issues';
 import Broadcast from './pages/Broadcast';
 import CategoryRegistry from './pages/CategoryRegistry';
 import OperatorReport from './pages/OperatorReport';
+import ReleaseVersions from './pages/ReleaseVersions';
 
 // Placeholder components for pages we haven't built yet
 const Placeholder = ({ title }: { title: string }) => (
@@ -56,6 +57,7 @@ function App() {
           <Route path="/tutor-impact" element={<TutorImpact />} />
           <Route path="/gods-view" element={<GodsView />} />
           <Route path="/categories" element={<CategoryRegistry />} />
+          <Route path="/versions" element={<ReleaseVersions />} />
           <Route path="/operator-report" element={<OperatorReport />} />
           <Route path="/settings" element={<Placeholder title="Settings" />} />
         </Route>

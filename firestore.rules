@@ -143,6 +143,11 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
+    match /release_versions/{versionId} {
+      allow read: if isAdmin();
+      allow write: if isAdmin();
+    }
+
     /**
      * Public Bug Reporting
      * Public Bug Reporting

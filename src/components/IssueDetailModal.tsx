@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { X, ExternalLink, Loader2, Save, Trash2, ShieldCheck, Lightbulb } from 'lucide-react';
-import type { ReportedIssue, IssueCategory } from '../types';
+import type { ReportedIssue, IssueCategory, ReleaseVersion } from '../types';
 import { ISSUE_STATUS, ISSUE_STATUS_OPTIONS, ISSUE_PLATFORMS } from '../constants';
-import { updateIssueStatus, updateIssueDetails, addIssueNote, deleteIssue, subscribeToIssueCategories, fetchAllUsersLookup } from '../services/firestoreService';
+import { updateIssueStatus, updateIssueDetails, addIssueNote, deleteIssue, subscribeToIssueCategories, subscribeToReleaseVersions, updateIssuePFV, fetchAllUsersLookup } from '../services/firestoreService';
 import { useAuth } from '../hooks/useAuth';
 
 interface IssueDetailModalProps {
@@ -20,6 +20,7 @@ export const IssueDetailModal: React.FC<IssueDetailModalProps> = ({ issue, onClo
 
     // Registry State
     const [categories, setCategories] = useState<IssueCategory[]>([]);
+    const [releaseVersions, setReleaseVersions] = useState<ReleaseVersion[]>([]);
 
     // User lookup for Reported By dropdown
     const [users, setUsers] = useState<{ uid: string; email: string }[]>([]);
@@ -35,6 +36,11 @@ export const IssueDetailModal: React.FC<IssueDetailModalProps> = ({ issue, onClo
 
     useEffect(() => {
         const unsubscribe = subscribeToIssueCategories((cats) => setCategories(cats));
+        return () => unsubscribe();
+    }, []);
+
+    useEffect(() => {
+        const unsubscribe = subscribeToReleaseVersions((versions) => setReleaseVersions(versions));
         return () => unsubscribe();
     }, []);
 
@@ -269,6 +275,39 @@ export const IssueDetailModal: React.FC<IssueDetailModalProps> = ({ issue, onClo
                                     <option value="cosmetic">Cosmetic</option>
                                 </select>
                             </div>
+                        </div>
+
+                        {/* Planned for Version (PFV) */}
+                        <div className="md:col-span-2">
+                            <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">
+                                Planned for Version (PFV)
+                            </label>
+                            <select
+                                value={localIssue.plannedForVersion || ''}
+                                onChange={(e) => {
+                                    const newPFV = e.target.value || null;
+                                    const prevPFV = localIssue.plannedForVersion || null;
+                                    setLocalIssue(prev => prev ? ({ ...prev, plannedForVersion: newPFV }) : null);
+                                    updateIssuePFV(issue.id, prevPFV, newPFV).then(() => {
+                                        onUpdate();
+                                    }).catch((err) => {
+                                        console.error("Failed to update PFV:", err);
+                                        setLocalIssue(issue);
+                                    });
+                                }}
+                                disabled={!isAdmin}
+                                className={`w-full bg-slate-900 border text-sm rounded-lg p-2.5 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 transition-colors ${!isAdmin ? 'opacity-50 cursor-not-allowed border-slate-700' : 'border-slate-700 text-slate-200'}`}
+                            >
+                                <option value="">Not planned</option>
+                                {releaseVersions
+                                    .filter(v => v.status !== 'released' || v.version === localIssue.plannedForVersion)
+                                    .map(v => (
+                                        <option key={v.id} value={v.version}>
+                                            {v.version} ({v.status})
+                                        </option>
+                                    ))}
+                            </select>
+                            <p className="text-[10px] text-slate-500 mt-1">Version where this fix is planned to ship.</p>
                         </div>
                     </section>
 

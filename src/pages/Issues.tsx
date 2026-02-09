@@ -16,7 +16,8 @@ import {
     ArrowUpDown,
     RefreshCw,
     Download,
-    Upload
+    Upload,
+    Tag
 } from 'lucide-react';
 import { ImportIssuesModal } from '../components/ImportIssuesModal';
 
@@ -872,6 +873,12 @@ const Issues: React.FC = () => {
                                         {issue.platform && (
                                             <div className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border border-slate-700 bg-slate-800 text-slate-400 capitalize`}>
                                                 {issue.platform}
+                                            </div>
+                                        )}
+                                        {issue.plannedForVersion && (
+                                            <div className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium border border-cyan-500/20 bg-cyan-500/10 text-cyan-400">
+                                                <Tag className="w-3 h-3" />
+                                                {issue.plannedForVersion}
                                             </div>
                                         )}
                                     </div>
