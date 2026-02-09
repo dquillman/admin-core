@@ -40,8 +40,19 @@ export interface User {
         endsAt?: Timestamp;
     };
 
+    // Usage Score (pre-computed, admin-only)
+    usageScore?: number;       // 0–100
+    usageBand?: UsageBand;
+    usageBreakdown?: {
+        activeDays?: number;
+        coreActions?: number;
+        completions?: number;
+    };
+
     [key: string]: any;
 }
+
+export type UsageBand = 'Dormant' | 'Curious' | 'Engaged' | 'Active' | 'Power User';
 
 export interface AuditLog {
     id: string;

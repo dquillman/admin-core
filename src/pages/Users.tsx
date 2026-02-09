@@ -17,7 +17,8 @@ import {
     adminUpdateEmail
 } from '../services/firestoreService';
 import { getEffectiveAccess } from '../utils/effectiveAccess';
-import type { User, TesterStats } from '../types';
+import { getBandFromScore, BAND_COLORS, ALL_BANDS } from '../utils/usageScore';
+import type { User, TesterStats, UsageBand } from '../types';
 import { APP_OPTIONS } from '../constants';
 import type { AppKey } from '../constants';
 import {
@@ -47,7 +48,8 @@ import {
     ArchiveRestore,
     RefreshCw,
     Pencil,
-    Copy
+    Copy,
+    ArrowUpDown
 } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -76,6 +78,10 @@ const UsersPage: React.FC = () => {
     const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
     const [trialAppId, setTrialAppId] = useState<AppKey>('exam-coach');
 
+    // Usage Filter & Sort
+    const [filterBand, setFilterBand] = useState<UsageBand | 'all'>('all');
+    const [sortByUsage, setSortByUsage] = useState<'none' | 'asc' | 'desc'>('none');
+
     // Edit Modal State
     const [editUser, setEditUser] = useState<User | null>(null);
     const [editForm, setEditForm] = useState({ firstName: '', lastName: '', displayName: '', email: '' });
@@ -91,7 +97,7 @@ const UsersPage: React.FC = () => {
             fetchUsers();
             fetchStats();
         }
-    }, [searchTerm, showTestersOnly, showArchived, authLoading, isAdmin]);
+    }, [searchTerm, showTestersOnly, showArchived, filterBand, sortByUsage, authLoading, isAdmin]);
 
     const fetchStats = async () => {
         if (!isAdmin) return;
@@ -116,9 +122,27 @@ const UsersPage: React.FC = () => {
                 data = await searchUsers(searchTerm);
             }
             // Client-side archive filter (avoids Firestore composite index requirement)
-            const filtered = showArchived
+            let filtered = showArchived
                 ? data.filter(u => u.archived === true)
                 : data.filter(u => u.archived !== true);
+
+            // Usage band filter
+            if (filterBand !== 'all') {
+                filtered = filtered.filter(u => {
+                    const band = u.usageBand || getBandFromScore(u.usageScore ?? 0);
+                    return band === filterBand;
+                });
+            }
+
+            // Usage score sort
+            if (sortByUsage !== 'none') {
+                filtered = [...filtered].sort((a, b) => {
+                    const sa = a.usageScore ?? 0;
+                    const sb = b.usageScore ?? 0;
+                    return sortByUsage === 'desc' ? sb - sa : sa - sb;
+                });
+            }
+
             setUsers(filtered);
         } catch (err) {
             console.error("Fetch users error:", err);
@@ -416,6 +440,29 @@ const UsersPage: React.FC = () => {
                         {showTestersOnly ? <FlaskConical className="w-4 h-4" /> : <Filter className="w-4 h-4" />}
                         {showTestersOnly ? "Testers Only" : "All Users"}
                     </button>
+                    <select
+                        value={filterBand}
+                        onChange={(e) => setFilterBand(e.target.value as UsageBand | 'all')}
+                        className="bg-slate-900 border border-slate-800 text-slate-400 text-sm rounded-2xl px-4 py-3 focus:ring-2 focus:ring-brand-500/50 focus:outline-none transition-all"
+                    >
+                        <option value="all">All Usage</option>
+                        {ALL_BANDS.map(b => (
+                            <option key={b} value={b}>{b}</option>
+                        ))}
+                    </select>
+                    <button
+                        onClick={() => setSortByUsage(prev => prev === 'none' ? 'desc' : prev === 'desc' ? 'asc' : 'none')}
+                        className={cn(
+                            "flex items-center gap-2 px-4 py-3 rounded-2xl border transition-all font-medium whitespace-nowrap",
+                            sortByUsage !== 'none'
+                                ? "bg-teal-500/10 border-teal-500/50 text-teal-400"
+                                : "bg-slate-900 border-slate-800 text-slate-400 hover:text-white"
+                        )}
+                        title={sortByUsage === 'none' ? 'Sort by usage' : sortByUsage === 'desc' ? 'Usage: High→Low' : 'Usage: Low→High'}
+                    >
+                        <ArrowUpDown className="w-4 h-4" />
+                        {sortByUsage === 'none' ? 'Usage' : sortByUsage === 'desc' ? 'Usage ↓' : 'Usage ↑'}
+                    </button>
                     <div className="relative max-w-md w-full">
                         <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-500" />
                         <input
@@ -472,13 +519,14 @@ const UsersPage: React.FC = () => {
                                 <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-slate-500">Access</th>
                                 <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-slate-500">Joined</th>
                                 <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-slate-500">Status</th>
+                                <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-slate-500">Usage</th>
                                 <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-slate-500">Actions</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-800">
                             {loading ? (
                                 <tr>
-                                    <td colSpan={6} className="px-6 py-12 text-center">
+                                    <td colSpan={7} className="px-6 py-12 text-center">
                                         <Loader2 className="w-8 h-8 text-brand-500 animate-spin mx-auto" />
                                     </td>
                                 </tr>
@@ -551,6 +599,31 @@ const UsersPage: React.FC = () => {
                                                     <span className="text-slate-500 text-[10px] font-bold uppercase">Archived</span>
                                                 )}
                                             </div>
+                                        </td>
+                                        <td className="px-6 py-4">
+                                            {(() => {
+                                                const score = u.usageScore ?? 0;
+                                                const band = u.usageBand || getBandFromScore(score);
+                                                const colors = BAND_COLORS[band];
+                                                return (
+                                                    <div className="group/usage relative min-w-[80px]">
+                                                        <div className="flex items-center gap-2">
+                                                            <div className="flex-1 h-2 bg-slate-800 rounded-full overflow-hidden">
+                                                                <div
+                                                                    className={cn("h-full rounded-full transition-all", colors.bar)}
+                                                                    style={{ width: `${score}%` }}
+                                                                />
+                                                            </div>
+                                                            <span className={cn("text-[10px] font-bold tabular-nums w-7 text-right", colors.text)}>
+                                                                {score}
+                                                            </span>
+                                                        </div>
+                                                        <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-1.5 bg-slate-800 border border-slate-700 rounded-lg text-xs text-white whitespace-nowrap opacity-0 group-hover/usage:opacity-100 transition-opacity pointer-events-none z-10">
+                                                            Usage score: {score} ({band}) — last 30 days
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })()}
                                         </td>
                                         <td className="px-6 py-4">
                                             <div className="flex items-center gap-1">
@@ -659,7 +732,7 @@ const UsersPage: React.FC = () => {
                                 );
                             }) : (
                                 <tr>
-                                    <td colSpan={6} className="px-6 py-12 text-center text-slate-500 italic">
+                                    <td colSpan={7} className="px-6 py-12 text-center text-slate-500 italic">
                                         {showArchived ? 'No archived users found.' : 'No users found.'}
                                     </td>
                                 </tr>
@@ -717,6 +790,62 @@ const UsersPage: React.FC = () => {
                                     </button>
                                 </div>
                             </div>
+
+                            {/* Usage Score */}
+                            {(() => {
+                                const score = selectedUser.usageScore ?? 0;
+                                const band = selectedUser.usageBand || getBandFromScore(score);
+                                const colors = BAND_COLORS[band];
+                                const breakdown = selectedUser.usageBreakdown;
+                                const circumference = 2 * Math.PI * 36;
+                                const offset = circumference - (score / 100) * circumference;
+                                return (
+                                    <div className="space-y-3">
+                                        <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500">Usage (30 days)</h4>
+                                        <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-4">
+                                            <div className="flex items-center gap-6">
+                                                {/* Circular progress ring */}
+                                                <div className="relative w-20 h-20 shrink-0">
+                                                    <svg className="w-20 h-20 -rotate-90" viewBox="0 0 80 80">
+                                                        <circle cx="40" cy="40" r="36" fill="none" stroke="currentColor" strokeWidth="6" className="text-slate-700" />
+                                                        <circle
+                                                            cx="40" cy="40" r="36" fill="none"
+                                                            strokeWidth="6" strokeLinecap="round"
+                                                            className={colors.ring}
+                                                            strokeDasharray={circumference}
+                                                            strokeDashoffset={offset}
+                                                        />
+                                                    </svg>
+                                                    <div className="absolute inset-0 flex items-center justify-center">
+                                                        <span className={cn("text-lg font-bold", colors.text)}>{score}</span>
+                                                    </div>
+                                                </div>
+                                                <div className="flex-1 space-y-2">
+                                                    <span className={cn("px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider border", colors.bg, colors.text, colors.border)}>
+                                                        {band}
+                                                    </span>
+                                                    {breakdown && (
+                                                        <div className="space-y-1 mt-2">
+                                                            <div className="flex justify-between text-xs">
+                                                                <span className="text-slate-500">Active days</span>
+                                                                <span className="text-slate-300 font-mono">{breakdown.activeDays ?? 0}</span>
+                                                            </div>
+                                                            <div className="flex justify-between text-xs">
+                                                                <span className="text-slate-500">Core actions</span>
+                                                                <span className="text-slate-300 font-mono">{breakdown.coreActions ?? 0}</span>
+                                                            </div>
+                                                            <div className="flex justify-between text-xs">
+                                                                <span className="text-slate-500">Completions</span>
+                                                                <span className="text-slate-300 font-mono">{breakdown.completions ?? 0}</span>
+                                                            </div>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                );
+                            })()}
 
                             {/* Debug Info */}
                             <div className="bg-slate-800 p-4 rounded-xl font-mono text-xs text-slate-400 overflow-x-auto">
