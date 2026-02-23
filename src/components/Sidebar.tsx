@@ -3,7 +3,6 @@ import { NavLink } from 'react-router-dom';
 import {
     LayoutDashboard,
     Users,
-    Settings,
     Globe,
     LogOut,
     ShieldCheck,
@@ -15,7 +14,8 @@ import {
     CheckCircle2,
     AlertCircle,
     ClipboardCheck,
-    Tag
+    Tag,
+    BookOpen
 } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { AppSelector } from './AppSelector';
@@ -35,7 +35,6 @@ const Sidebar: React.FC = () => {
 
     const navItems = [
         { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
-        { to: '/gods-view', icon: Activity, label: 'Gods View' },
         { to: '/users', icon: Users, label: 'Users' },
         { to: '/issues', icon: AlertCircle, label: 'Issues' },
         { to: '/operator-report', icon: ClipboardCheck, label: 'Operator Report' },
@@ -48,10 +47,9 @@ const Sidebar: React.FC = () => {
         { to: '/marketing/outreach', icon: Megaphone, label: 'Outreach' },
         { to: '/funnel', icon: Filter, label: 'Funnel' },
         { to: '/tutor-impact', icon: CheckCircle2, label: 'Tutor Impact' },
-        { to: '/tutor-impact', icon: CheckCircle2, label: 'Tutor Impact' },
+        ...(state.isAdmin ? [{ to: '/exams', icon: BookOpen, label: 'Exams' }] : []),
         ...(state.isAdmin ? [{ to: '/categories', icon: Filter, label: 'Issue Categories' }] : []),
         ...(state.isAdmin ? [{ to: '/versions', icon: Tag, label: 'Release Versions' }] : []),
-        { to: '/settings', icon: Settings, label: 'Settings' },
     ];
 
     return (

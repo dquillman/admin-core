@@ -14,11 +14,12 @@ import {
     restoreUser,
     grantFreshTrial,
     updateUserProfile,
-    adminUpdateEmail
+    adminUpdateEmail,
+    setBillingStatus
 } from '../services/firestoreService';
 import { getEffectiveAccess } from '../utils/effectiveAccess';
 import { getBandFromScore, BAND_COLORS, ALL_BANDS } from '../utils/usageScore';
-import type { User, TesterStats, UsageBand } from '../types';
+import type { User, TesterStats, UsageBand, BillingStatus } from '../types';
 import { APP_OPTIONS } from '../constants';
 import type { AppKey } from '../constants';
 import {
@@ -61,7 +62,7 @@ function cn(...inputs: ClassValue[]) {
 const UsersPage: React.FC = () => {
     // State
     const [users, setUsers] = useState<User[]>([]);
-    const [stats, setStats] = useState<TesterStats>({ activeTesters: 0, expiringSoon: 0, totalGranted30d: 0 });
+    const [stats, setStats] = useState<TesterStats>({ grantedTesters: 0, revokedTesters: 0, disabledUsers: 0 });
     const [searchTerm, setSearchTerm] = useState('');
     const [showTestersOnly, setShowTestersOnly] = useState(false);
     const [showArchived, setShowArchived] = useState(false);
@@ -81,6 +82,9 @@ const UsersPage: React.FC = () => {
     // Usage Filter & Sort
     const [filterBand, setFilterBand] = useState<UsageBand | 'all'>('all');
     const [sortByUsage, setSortByUsage] = useState<'none' | 'asc' | 'desc'>('none');
+
+    // Billing override state
+    const [billingOverrideLoading, setBillingOverrideLoading] = useState(false);
 
     // Edit Modal State
     const [editUser, setEditUser] = useState<User | null>(null);
@@ -173,7 +177,7 @@ const UsersPage: React.FC = () => {
     const exportUsersToCSV = () => {
         if (!users || users.length === 0) return;
 
-        const CSV_HEADERS = ['First Name', 'Last Name', 'Email', 'Plan', 'Access', 'Joined', 'Status'] as const;
+        const CSV_HEADERS = ['First Name', 'Last Name', 'Email', 'Plan', 'Access', 'Joined', 'Status', 'Billing Status'] as const;
 
         const resolvePlan = (u: User): string => {
             const access = getEffectiveAccess(u);
@@ -224,6 +228,7 @@ const UsersPage: React.FC = () => {
             resolveAccess(u),
             formatJoined(u),
             resolveStatus(u),
+            u.billingStatus || 'unknown',
         ].map(escapeCSV).join(','));
 
         const csv = [CSV_HEADERS.join(','), ...rows].join('\n');
@@ -483,18 +488,17 @@ const UsersPage: React.FC = () => {
                         <FlaskConical className="w-6 h-6" />
                     </div>
                     <div>
-                        <p className="text-slate-500 text-xs uppercase font-bold tracking-wider">Active Testers</p>
-                        <p className="text-2xl font-bold text-white">{stats.activeTesters}</p>
+                        <p className="text-slate-500 text-xs uppercase font-bold tracking-wider">Granted Testers</p>
+                        <p className="text-2xl font-bold text-white">{stats.grantedTesters}</p>
                     </div>
                 </div>
-                {/* Add more stats if needed, reusing structure */}
                 <div className="bg-slate-900/50 border border-slate-800 p-4 rounded-3xl flex items-center gap-4">
                     <div className="w-12 h-12 rounded-2xl bg-amber-500/10 flex items-center justify-center text-amber-400">
                         <Clock className="w-6 h-6" />
                     </div>
                     <div>
-                        <p className="text-slate-500 text-xs uppercase font-bold tracking-wider">Expiring Soon</p>
-                        <p className="text-2xl font-bold text-white">{stats.expiringSoon}</p>
+                        <p className="text-slate-500 text-xs uppercase font-bold tracking-wider">Revoked Testers</p>
+                        <p className="text-2xl font-bold text-white">{stats.revokedTesters}</p>
                     </div>
                 </div>
                 <div className="bg-slate-900/50 border border-slate-800 p-4 rounded-3xl flex items-center gap-4">
@@ -502,8 +506,8 @@ const UsersPage: React.FC = () => {
                         <CheckCircle2 className="w-6 h-6" />
                     </div>
                     <div>
-                        <p className="text-slate-500 text-xs uppercase font-bold tracking-wider">Granted (30d)</p>
-                        <p className="text-2xl font-bold text-white">{stats.totalGranted30d}</p>
+                        <p className="text-slate-500 text-xs uppercase font-bold tracking-wider">Disabled Users</p>
+                        <p className="text-2xl font-bold text-white">{stats.disabledUsers}</p>
                     </div>
                 </div>
             </div>
@@ -550,7 +554,7 @@ const UsersPage: React.FC = () => {
                                             </div>
                                         </td>
                                         <td className="px-6 py-4">
-                                            <div className="flex items-center gap-2">
+                                            <div className="flex flex-wrap items-center gap-2">
                                                 <span className={cn(
                                                     "px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wider border",
                                                     u.plan === 'pro'
@@ -562,6 +566,30 @@ const UsersPage: React.FC = () => {
                                                 {u.testerOverride && (
                                                     <span className="px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wider bg-purple-500/10 text-purple-400 border border-purple-500/20 flex items-center gap-1">
                                                         <FlaskConical className="w-3 h-3" />
+                                                        Tester
+                                                    </span>
+                                                )}
+                                                {u.billingStatus === 'paid' && (
+                                                    <span
+                                                        className="px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wider bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 flex items-center gap-1"
+                                                        title={u.billingSource === 'stripe' && u.billingRef ? `Verified via Stripe subscription (${u.billingRef})` : 'Verified Paid'}
+                                                    >
+                                                        <CheckCircle2 className="w-3 h-3" />
+                                                        Paid
+                                                    </span>
+                                                )}
+                                                {u.billingStatus === 'comped' && (
+                                                    <span className="px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wider bg-slate-500/10 text-slate-400 border border-slate-500/20">
+                                                        Comped
+                                                    </span>
+                                                )}
+                                                {u.billingStatus === 'trial' && (
+                                                    <span className="px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wider bg-blue-500/10 text-blue-400 border border-blue-500/20">
+                                                        Trial
+                                                    </span>
+                                                )}
+                                                {u.billingStatus === 'tester' && !u.testerOverride && (
+                                                    <span className="px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wider bg-amber-500/10 text-amber-400 border border-amber-500/20">
                                                         Tester
                                                     </span>
                                                 )}
@@ -847,9 +875,82 @@ const UsersPage: React.FC = () => {
                                 );
                             })()}
 
+                            {/* Billing Status */}
+                            <div className="space-y-3">
+                                <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500">Billing</h4>
+                                <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-4 space-y-3">
+                                    <div className="flex items-center justify-between">
+                                        <span className="text-sm text-slate-400">Status</span>
+                                        <span className={cn(
+                                            "text-xs font-bold uppercase",
+                                            selectedUser.billingStatus === 'paid' ? "text-emerald-400" :
+                                                selectedUser.billingStatus === 'trial' ? "text-blue-400" :
+                                                    selectedUser.billingStatus === 'tester' ? "text-amber-400" :
+                                                        selectedUser.billingStatus === 'comped' ? "text-slate-300" :
+                                                            "text-slate-500"
+                                        )}>
+                                            {selectedUser.billingStatus || 'unknown'}
+                                        </span>
+                                    </div>
+                                    <div className="flex items-center justify-between">
+                                        <span className="text-sm text-slate-400">Source</span>
+                                        <span className="text-xs text-slate-300 font-mono">{selectedUser.billingSource || '—'}</span>
+                                    </div>
+                                    {selectedUser.billingRef && (
+                                        <div className="flex items-center justify-between">
+                                            <span className="text-sm text-slate-400">Ref</span>
+                                            <span className="text-xs text-slate-300 font-mono truncate max-w-[200px]">{selectedUser.billingRef}</span>
+                                        </div>
+                                    )}
+                                    {selectedUser.verifiedPaidAt && (
+                                        <div className="flex items-center justify-between">
+                                            <span className="text-sm text-slate-400">Verified At</span>
+                                            <span className="text-xs text-slate-300">{selectedUser.verifiedPaidAt.toDate().toLocaleDateString()}</span>
+                                        </div>
+                                    )}
+                                    <div className="pt-2 border-t border-slate-700">
+                                        <label className="block text-[10px] text-slate-500 uppercase font-bold mb-1">Admin Override</label>
+                                        <div className="flex items-center gap-2">
+                                            <select
+                                                value={selectedUser.billingStatus || 'unknown'}
+                                                onChange={async (e) => {
+                                                    const newStatus = e.target.value as Exclude<BillingStatus, 'paid'>;
+                                                    setBillingOverrideLoading(true);
+                                                    try {
+                                                        await setBillingStatus(selectedUser.uid, newStatus);
+                                                        setMessage({ type: 'success', text: `Billing status set to ${newStatus}` });
+                                                        fetchUsers();
+                                                        setSelectedUser({ ...selectedUser, billingStatus: newStatus, billingSource: newStatus === 'unknown' ? null : 'manual' });
+                                                    } catch (err: any) {
+                                                        setMessage({ type: 'error', text: err.message || 'Failed to update billing status' });
+                                                    } finally {
+                                                        setBillingOverrideLoading(false);
+                                                    }
+                                                }}
+                                                disabled={billingOverrideLoading}
+                                                className="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm focus:ring-2 focus:ring-brand-500/50 focus:outline-none disabled:opacity-50"
+                                            >
+                                                <option value="unknown">Unknown</option>
+                                                <option value="tester">Tester</option>
+                                                <option value="comped">Comped</option>
+                                                <option value="trial">Trial</option>
+                                            </select>
+                                            {billingOverrideLoading && <Loader2 className="w-4 h-4 text-slate-400 animate-spin" />}
+                                        </div>
+                                        <p className="text-[10px] text-slate-500 mt-1">"Paid" can only be set by Stripe</p>
+                                    </div>
+                                </div>
+                            </div>
+
                             {/* Debug Info */}
                             <div className="bg-slate-800 p-4 rounded-xl font-mono text-xs text-slate-400 overflow-x-auto">
-                                <pre>{JSON.stringify(getEffectiveAccess(selectedUser), null, 2)}</pre>
+                                <pre>{JSON.stringify({
+                                    ...getEffectiveAccess(selectedUser),
+                                    billingStatus: selectedUser.billingStatus || null,
+                                    billingSource: selectedUser.billingSource || null,
+                                    billingRef: selectedUser.billingRef || null,
+                                    verifiedPaidAt: selectedUser.verifiedPaidAt || null,
+                                }, null, 2)}</pre>
                             </div>
                         </div>
                     </div>

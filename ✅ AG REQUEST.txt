@@ -1,0 +1,28 @@
+✅ AG REQUEST
+CONTEXT
+Production SaaS Maintenance (Admin Core, ExamCoach).
+Stability > Speed.
+🔒 SAFETY RULES (NON-NEGOTIABLE)
+- Work ONLY in a new feature branch
+- Frontend/UI changes preferred over backend
+- NO Firebase Functions deployment without explicit instruction
+- NO Auth/Login simulation
+- NO rewriting of existing safe logic
+- STOP and ASK if backend/infra/auth is unsure
+🎯 GOAL
+[Insert specific goal here]
+🧩 REQUIREMENTS
+- [Requirement 1]
+- [Requirement 2]
+🚫 NON-GOALS
+- No cleanup/refactoring outside scope
+- No "while I'm here" fixes
+🧪 VERIFICATION
+- Build must pass (npm run build)
+- Static code audit (no linter errors)
+- NO manual browser verification
+📦 COMPLETION
+- Branch Name
+- Commit Hash
+- Files Changed
+- Safety Declaration

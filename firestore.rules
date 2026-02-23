@@ -149,6 +149,20 @@ service cloud.firestore {
     }
 
     /**
+     * Usage Events (Client Write, Admin Read)
+     * - Client apps write usage events for score computation
+     * - Cloud Functions process via onUsageEvent trigger (Admin SDK bypasses rules)
+     * - Admins can read for debugging
+     * NOTE: usageScore/usageBand/usageBreakdown on /users are written exclusively
+     *       by Cloud Functions (Admin SDK) — no client-side protection needed since
+     *       /users rules are open for guest/anon support.
+     */
+    match /usage_events/{eventId} {
+      allow create: if true;
+      allow read: if isAdmin();
+    }
+
+    /**
      * Public Bug Reporting
      * Public Bug Reporting
      * - Handle "issues" collection (Real Client).
@@ -212,6 +226,14 @@ service cloud.firestore {
 
     match /admin_config/{docId} {
       allow read, write: if isAdmin();
+    }
+
+    /**
+     * Billing Events Unresolved (Stripe webhook failures)
+     * - Admin read only; writes come from Cloud Functions (Admin SDK bypasses rules)
+     */
+    match /billing_events_unresolved/{eventId} {
+      allow read: if isAdmin();
     }
 
     /**

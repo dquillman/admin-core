@@ -246,7 +246,7 @@ const Broadcast = () => {
                         </button>
 
                         <p className="text-xs text-slate-500 mt-3 text-center">
-                            Drafts are saved to the system but cannot be reopened yet.
+                            Click a saved draft below to reload it into the editor.
                         </p>
                     </div>
 

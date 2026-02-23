@@ -48,6 +48,13 @@ const TutorImpact: React.FC = () => {
                 <p className="text-slate-400">Measuring the effectiveness of AI explanations on learning outcomes</p>
             </div>
 
+            <div className="bg-amber-500/10 border border-amber-500/30 rounded-2xl p-4 flex items-start gap-3">
+                <span className="text-amber-400 text-lg mt-0.5">⚠</span>
+                <p className="text-sm text-amber-300/90">
+                    <strong>Data Notice:</strong> Metrics on this page use placeholder calculations and do not reflect verified production data. Treat all figures as directional estimates only.
+                </p>
+            </div>
+
             {/* Impact Highlights */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                 {/* Correlation Card */}

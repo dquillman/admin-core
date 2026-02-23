@@ -13,7 +13,7 @@ const OperatorReport: React.FC = () => {
 
     useEffect(() => {
         setLoading(true);
-        const unsubscribe = subscribeToReportedIssues(100, (data) => {
+        const unsubscribe = subscribeToReportedIssues(500, (data) => {
             setIssues(data);
             setLoading(false);
         });

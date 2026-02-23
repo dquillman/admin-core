@@ -18,7 +18,7 @@ import {
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { db, auth } from '../firebase';
 import { safeGetDocs, safeGetDoc, safeGetCount } from '../utils/firestoreSafe';
-import type { User, TesterStats, ReportedIssue, IssueNote, IssueCategory, ReleaseVersion, ReleaseVersionStatus } from '../types';
+import type { User, TesterStats, ReportedIssue, IssueNote, IssueCategory, ReleaseVersion, ReleaseVersionStatus, BillingStatus } from '../types';
 import { getAppPrefix, APP_KEYS } from '../constants';
 import type { AppKey } from '../constants';
 
@@ -151,8 +151,7 @@ export const getTesterUsers = async (activeOnly: boolean = false): Promise<User[
 };
 
 export const getTesterSummaryStats = async (): Promise<TesterStats> => {
-    // Reuse the same stats doc
-    return getDashboardStats() as any;
+    return getDashboardStats();
 };
 
 // --- Audit Log Service (App Scoped) ---
@@ -219,7 +218,9 @@ export const grantTesterAccess = async (targetUid: string) => {
         testerGrantedAt: serverTimestamp(),
         testerGrantedBy: adminUser.email || adminUser.uid,
         trialActive: false,
-        trialEndsAt: null
+        trialEndsAt: null,
+        billingStatus: 'tester' as const,
+        billingSource: 'manual' as const,
         // Legacy 'trial' field is not cleared but ignored by precedence logic
     };
 
@@ -237,12 +238,19 @@ export const revokeTesterAccess = async (targetUid: string) => {
 
     if (!userSnap.exists()) throw new Error("User not found");
 
-    const updates = {
+    const userData = userSnap.data();
+    const updates: Record<string, any> = {
         testerOverride: false,
         testerExpiresAt: null,
         testerGrantedAt: null,
-        testerGrantedBy: null
+        testerGrantedBy: null,
     };
+
+    // Preserve billing status if Stripe-verified paid
+    if (userData?.billingSource !== 'stripe') {
+        updates.billingStatus = 'unknown';
+        updates.billingSource = null;
+    }
 
     await updateDoc(userRef, updates);
     await logGlobalAdminAction('REVOKE_TESTER_PRO', targetUid, {
@@ -270,7 +278,9 @@ export const fixTesterAccess = async (targetUid: string) => {
         testerGrantedAt: serverTimestamp(),
         testerGrantedBy: adminUser.email || adminUser.uid,
         trialActive: false,
-        trialEndsAt: null
+        trialEndsAt: null,
+        billingStatus: 'tester' as const,
+        billingSource: 'manual' as const,
     };
 
     await updateDoc(userRef, updates);
@@ -287,7 +297,11 @@ const pickAccessFields = (data: any) => ({
     plan: data?.plan ?? null,
     trialActive: data?.trialActive ?? null,
     trialEndsAt: data?.trialEndsAt ?? null,
-    archived: data?.archived ?? null
+    archived: data?.archived ?? null,
+    billingStatus: data?.billingStatus ?? null,
+    billingSource: data?.billingSource ?? null,
+    billingRef: data?.billingRef ?? null,
+    verifiedPaidAt: data?.verifiedPaidAt ?? null,
 });
 
 /**
@@ -314,6 +328,8 @@ export const startTrial = async (targetUid: string) => {
     const updates = {
         trialActive: true,
         trialEndsAt: Timestamp.fromDate(endsAt),
+        billingStatus: 'trial' as const,
+        billingSource: 'manual' as const,
     };
 
     await updateDoc(userRef, updates);
@@ -341,6 +357,7 @@ export const extendTrial = async (targetUid: string) => {
     const updates = {
         trialActive: true,
         trialEndsAt: Timestamp.fromDate(endsAt),
+        billingStatus: 'trial' as const,
     };
 
     await updateDoc(userRef, updates);
@@ -360,6 +377,8 @@ export const cancelTrial = async (targetUid: string) => {
     const updates = {
         trialActive: false,
         trialEndsAt: null,
+        billingStatus: 'unknown' as const,
+        billingSource: null,
     };
 
     await updateDoc(userRef, updates);
@@ -389,6 +408,8 @@ export const grantFreshTrial = async (targetUid: string, appId: string, days: nu
     const updates = {
         trialActive: true,
         trialEndsAt: Timestamp.fromDate(endsAt),
+        billingStatus: 'trial' as const,
+        billingSource: 'manual' as const,
     };
 
     await updateDoc(userRef, updates);
@@ -444,6 +465,32 @@ export const restoreUser = async (targetUid: string) => {
     await logGlobalAdminAction('RESTORE_USER', targetUid, {
         prev: pickAccessFields(userSnap.data()),
         new: updates
+    });
+};
+
+/**
+ * Set Billing Status (Direct Write — Pattern A)
+ * Admin can explicitly set comped, tester, or unknown.
+ * 'paid' is excluded — only Stripe can set that.
+ */
+export const setBillingStatus = async (targetUid: string, status: Exclude<BillingStatus, 'paid'>) => {
+    await requireAdmin();
+    const adminUser = auth.currentUser;
+    if (!adminUser) throw new Error("Not authenticated");
+
+    const userRef = doc(db, 'users', targetUid);
+    const userSnap = await safeGetDoc(userRef, { fallback: null, context: 'Admin', description: 'Set Billing Status Check' });
+    if (!userSnap.exists()) throw new Error("User not found");
+
+    const updates: Record<string, any> = {
+        billingStatus: status,
+        billingSource: status === 'unknown' ? null : 'manual',
+    };
+
+    await updateDoc(userRef, updates);
+    await logGlobalAdminAction('SET_BILLING_STATUS', targetUid, {
+        prev: pickAccessFields(userSnap.data()),
+        new: updates,
     });
 };
 
@@ -560,12 +607,14 @@ export interface SessionFilters {
     limitCount?: number;
 }
 
+/** @deprecated Session tracking disabled — returns empty array. */
 export const getUserSessions = async (_filters: SessionFilters = {}) => {
-    return [] as any[]; // List query disabled to prevent index requirements
+    return [] as any[];
 };
 
+/** @deprecated Session tracking disabled — returns 0. */
 export const getActiveSessionsCount = async (_appId?: string) => {
-    return 0; // Aggregation disabled
+    return 0;
 };
 
 // --- Marketing Assets Service ---
@@ -591,9 +640,9 @@ export const updateMarketingAssets = async (data: { pro_value_primary: string; p
     await logGlobalAdminAction('UPDATE_MARKETING_ASSETS', 'examcoach_pro', { data });
 };
 
-// --- Operational Stats Service ---
+/** @deprecated Aggregation disabled — returns 0. */
 export const getActionLatencyCount = async () => {
-    return 0; // Aggregation disabled
+    return 0;
 };
 
 // --- User Lookup (lightweight, for dropdowns) ---

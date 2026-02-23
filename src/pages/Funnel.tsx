@@ -6,7 +6,8 @@ import {
     Loader2,
     Users,
     Zap,
-    CreditCard
+    CreditCard,
+    MousePointerClick
 } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -107,10 +108,17 @@ const FunnelPage: React.FC = () => {
                     color="bg-purple-500"
                 />
                 <FunnelStep
+                    label="Upgrade Clicked"
+                    count={metrics.upgradeClicked || 0}
+                    total={metrics.users}
+                    icon={MousePointerClick}
+                    color="bg-pink-500"
+                />
+                <FunnelStep
                     label="Converted"
                     count={metrics.converted}
                     total={metrics.users}
-                    icon={Zap} // Reusing Zap or similar
+                    icon={Zap}
                     color="bg-emerald-500"
                     isLast
                 />
@@ -120,7 +128,7 @@ const FunnelPage: React.FC = () => {
                 <h2 className="text-xl font-bold text-white mb-6">Drop-off Analysis</h2>
                 <div className="space-y-4">
                     <p className="text-slate-400 text-sm">
-                        <strong className="text-white">Activation Gap:</strong> {((1 - (metrics.activated / metrics.users || 0)) * 100).toFixed(1)}% of users never confuse the first quiz.
+                        <strong className="text-white">Activation Gap:</strong> {((1 - (metrics.activated / metrics.users || 0)) * 100).toFixed(1)}% of users never complete the first quiz.
                     </p>
                     <p className="text-slate-400 text-sm">
                         <strong className="text-white">Pricing Intent:</strong> {((metrics.pricingViewed / metrics.activated || 0) * 100).toFixed(1)}% of activated users viewed pricing.

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { assignMissingIssueIds, repairDuplicateIssueIds, subscribeToReportedIssues, subscribeToIssueCategories, fetchAllUsersLookup } from '../services/firestoreService';
-import type { ReportedIssue, IssueCategory } from '../types';
+import { assignMissingIssueIds, repairDuplicateIssueIds, subscribeToReportedIssues, subscribeToIssueCategories, subscribeToReleaseVersions, fetchAllUsersLookup } from '../services/firestoreService';
+import type { ReportedIssue, IssueCategory, ReleaseVersion } from '../types';
+import { useAuth } from '../hooks/useAuth';
 import { OperatorReviewPanel } from '../components/OperatorReviewPanel';
 import { IssueDetailModal } from '../components/IssueDetailModal';
 import { ISSUE_STATUS, ISSUE_STATUS_OPTIONS, ISSUE_PLATFORMS, getStatusColor as getStatusColorConstant, APP_OPTIONS, normalizeAppValue } from '../constants';
@@ -97,6 +98,7 @@ const savePresets = (presets: IssueFilterPreset[]): void => {
 };
 
 const Issues: React.FC = () => {
+    const { isAdmin } = useAuth();
     const [issues, setIssues] = useState<ReportedIssue[]>([]);
     const [loading, setLoading] = useState(true);
     const [isReviewPanelOpen, setIsReviewPanelOpen] = useState(false);
@@ -118,6 +120,8 @@ const Issues: React.FC = () => {
     const [searchUser, setSearchUser] = useState<string>('');
     const [filterClassification, setFilterClassification] = useState<string>('all');
     const [filterAssignee, setFilterAssignee] = useState<string>('all');
+    const [filterPFV, setFilterPFV] = useState<string>('all');
+    const [releaseVersions, setReleaseVersions] = useState<ReleaseVersion[]>([]);
     const [sortOrder, setSortOrder] = useState<'newest' | 'oldest' | 'issue_id_desc' | 'issue_id_asc' | 'severity_desc' | 'severity_asc' | 'type_asc' | 'type_desc' | 'classification_risk' | 'organized' | 'assignee_asc' | 'assignee_desc' | 'stuck_first'>('newest');
     const [categories, setCategories] = useState<IssueCategory[]>([]);
     const [isImportOpen, setIsImportOpen] = useState(false);
@@ -165,7 +169,7 @@ const Issues: React.FC = () => {
 
     useEffect(() => {
         setLoading(true);
-        const unsubscribe = subscribeToReportedIssues(100, (data) => {
+        const unsubscribe = subscribeToReportedIssues(500, (data) => {
             setIssues(data);
             setLoading(false);
         });
@@ -178,18 +182,16 @@ const Issues: React.FC = () => {
     }, []);
 
     useEffect(() => {
+        if (!isAdmin) return;
+        const unsubscribe = subscribeToReleaseVersions((versions) => setReleaseVersions(versions));
+        return () => unsubscribe();
+    }, [isAdmin]);
+
+    useEffect(() => {
         fetchAllUsersLookup()
             .then(setUsers)
             .catch((err) => console.error('Failed to fetch users lookup:', err));
     }, []);
-
-    // Manual refresh is no longer strictly necessary but kept for other reasons if needed
-    const fetchIssues = async () => {
-        // Re-triggering loading state might look glitchy with realtime updates, 
-        // so we rely on the listener. 
-        // If a hard refresh is absolutely needed, we could re-mount or just log.
-        console.log("Realtime listener is active. Manual refresh ignored.");
-    };
 
     const formatDate = (val: any): string => {
         try {
@@ -259,6 +261,14 @@ const Issues: React.FC = () => {
             if (filterSeverity !== 'all' && severity !== filterSeverity) return false;
 
             if (filterPlatform !== 'all' && issue.platform !== filterPlatform) return false;
+
+            if (filterPFV !== 'all') {
+                if (filterPFV === 'not_planned') {
+                    if (issue.plannedForVersion) return false;
+                } else {
+                    if (issue.plannedForVersion !== filterPFV) return false;
+                }
+            }
 
             if (filterAssignee !== 'all' && resolveAssignee(issue.userId) !== filterAssignee) return false;
 
@@ -388,7 +398,7 @@ const Issues: React.FC = () => {
             const dateB = getMillis(b);
             return sortOrder === 'newest' ? dateB - dateA : dateA - dateB;
         });
-    }, [issues, filterApp, filterType, filterStatuses, filterSeverity, filterClassification, filterAssignee, filterPlatform, searchUser, sortOrder, userMap]);
+    }, [issues, filterApp, filterType, filterStatuses, filterSeverity, filterClassification, filterAssignee, filterPlatform, filterPFV, searchUser, sortOrder, userMap]);
 
 
 
@@ -514,7 +524,7 @@ const Issues: React.FC = () => {
                 <div>
                     <h1 className="text-3xl font-bold text-white tracking-tight">Reported Issues</h1>
                     <div className="text-sm text-slate-500 mt-1">
-                        Showing {filteredIssues.length} of {issues.length} issues (Limit: 100)
+                        Showing {filteredIssues.length} of {issues.length} issues (Limit: 500)
                     </div>
                 </div>
 
@@ -607,13 +617,6 @@ const Issues: React.FC = () => {
                         <span className="hidden md:inline text-xs font-medium">Repair IDs</span>
                     </button>
 
-                    <button
-                        onClick={fetchIssues}
-                        className="p-2 bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white rounded-lg transition-colors self-start md:self-center"
-                        title="Refresh Issues"
-                    >
-                        <RefreshCw className="w-5 h-5" />
-                    </button>
                 </div>
             </div>
 
@@ -768,6 +771,25 @@ const Issues: React.FC = () => {
                         <option key={p} value={p}>{p}</option>
                     ))}
                 </select>
+
+                {/* PFV Filter (Admin Only) */}
+                {isAdmin && (
+                    <select
+                        value={filterPFV}
+                        onChange={(e) => setFilterPFV(e.target.value)}
+                        className="bg-slate-950 border border-slate-800 text-slate-300 text-sm rounded-lg focus:ring-brand-500 focus:border-brand-500 block w-full md:w-auto p-2.5"
+                    >
+                        <option value="all">All Versions (PFV)</option>
+                        <option value="not_planned">Not planned</option>
+                        {releaseVersions
+                            .filter(v => v.status !== 'released' || issues.some(i => i.plannedForVersion === v.version))
+                            .map(v => (
+                                <option key={v.id} value={v.version}>
+                                    {v.version} ({v.status})
+                                </option>
+                            ))}
+                    </select>
+                )}
 
                 {/* Assigned To Filter */}
                 <select
@@ -964,7 +986,7 @@ const Issues: React.FC = () => {
             <IssueDetailModal
                 issue={selectedIssue}
                 onClose={() => setSelectedIssue(null)}
-                onUpdate={fetchIssues}
+                onUpdate={() => {}}
             />
 
             {/* Import Issues Modal */}

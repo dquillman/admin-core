@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(firebase deploy:*)",
+      "Bash(npm run build:*)",
+      "Bash(npx firebase deploy:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(node -e:*)",
+      "Bash(npx tsc:*)",
+      "Bash(node scripts/check-version.mjs:*)",
+      "Bash(echo:*)",
+      "Bash(git push:*)",
+      "Bash(npm run deploy)",
+      "Bash(npm install:*)",
+      "Bash(node scripts/assert-deploy-authority.mjs:*)",
+      "WebFetch(domain:admin-core-20292.web.app)",
+      "Bash(npx vite build)"
+    ]
+  }
+}

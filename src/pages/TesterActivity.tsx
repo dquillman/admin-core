@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../hooks/useAuth';
 import { useApp } from '../context/AppContext';
-import { getUserSessions, getActiveSessionsCount } from '../services/firestoreService';
+import { getUserSessions } from '../services/firestoreService';
 import type { SessionFilters } from '../services/firestoreService';
 import {
     Activity,
@@ -19,7 +19,6 @@ const TesterActivity: React.FC = () => {
     const { isAdmin, loading: authLoading } = useAuth();
     const [sessions, setSessions] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
-    const [activeCount, setActiveCount] = useState(0);
     const [filters, setFilters] = useState<SessionFilters>({
         appId: appId,
         dateRange: '24h',
@@ -39,12 +38,8 @@ const TesterActivity: React.FC = () => {
         if (!isAdmin) return;
         setLoading(true);
         try {
-            const [sessionData, count] = await Promise.all([
-                getUserSessions({ ...filters, appId }),
-                getActiveSessionsCount(appId)
-            ]);
+            const sessionData = await getUserSessions({ ...filters, appId });
             setSessions(sessionData);
-            setActiveCount(count);
 
             if (sessionData.length > 0) {
                 setLastDoc(sessionData[sessionData.length - 1]._raw);
@@ -111,11 +106,8 @@ const TesterActivity: React.FC = () => {
                 <div className="flex items-center gap-3">
                     <div className="bg-slate-900/50 border border-slate-800 rounded-2xl px-6 py-3 flex items-center gap-4">
                         <div className="flex flex-col">
-                            <span className="text-slate-500 text-xs font-semibold uppercase tracking-wider">Active Now</span>
-                            <div className="flex items-center gap-2">
-                                <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.5)]"></div>
-                                <span className="text-2xl font-bold text-white">{activeCount}</span>
-                            </div>
+                            <span className="text-slate-500 text-xs font-semibold uppercase tracking-wider">Live Sessions</span>
+                            <span className="text-sm text-slate-400">Tracking currently disabled</span>
                         </div>
                     </div>
                 </div>

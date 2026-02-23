@@ -32,10 +32,14 @@ var __importStar = (this && this.__importStar) || (function () {
         return result;
     };
 })();
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.onIssueCreated = exports.autoExpireTesterPro = exports.disableUser = exports.revokeTesterPro = exports.grantTesterPro = void 0;
+exports.stripeWebhook = exports.pruneUsageWindows = exports.onUsageEvent = exports.onIssueCreated = exports.adminUpdateUserEmail = exports.autoExpireTesterPro = exports.disableUser = exports.revokeTesterPro = exports.grantTesterPro = void 0;
 const functions = __importStar(require("firebase-functions"));
 const admin = __importStar(require("firebase-admin"));
+const stripe_1 = __importDefault(require("stripe"));
 admin.initializeApp();
 const db = admin.firestore();
 async function assertAdmin(context) {
@@ -78,7 +82,9 @@ exports.grantTesterPro = functions.https.onCall(async (data, context) => {
         testerExpiresAt: admin.firestore.Timestamp.fromDate(expiresAt),
         testerGrantedBy: context.auth?.uid,
         testerGrantedAt: admin.firestore.FieldValue.serverTimestamp(),
-        isPro: true
+        isPro: true,
+        billingStatus: 'tester',
+        billingSource: 'manual',
     });
     await db.collection("admin_audit").add({
         action: "GRANT_TESTER_PRO",
@@ -109,11 +115,16 @@ exports.revokeTesterPro = functions.https.onCall(async (data, context) => {
     if (!targetDoc.exists)
         throw new functions.https.HttpsError("not-found", "User not found");
     const prevState = targetDoc.data();
-    await targetRef.update({
+    const revokeUpdates = {
         testerOverride: false,
         testerExpiresAt: null,
-        isPro: false
-    });
+        isPro: false,
+    };
+    if (prevState?.billingSource !== 'stripe') {
+        revokeUpdates.billingStatus = 'unknown';
+        revokeUpdates.billingSource = null;
+    }
+    await targetRef.update(revokeUpdates);
     await db.collection("admin_audit").add({
         action: "REVOKE_TESTER_PRO",
         adminUid: context.auth?.uid,
@@ -162,17 +173,23 @@ exports.autoExpireTesterPro = functions.pubsub.schedule("every 6 hours").onRun(a
     const batch = db.batch();
     const auditBatch = db.batch();
     snapshot.docs.forEach(userDoc => {
-        batch.update(userDoc.ref, {
+        const userData = userDoc.data();
+        const expireUpdates = {
             testerOverride: false,
             testerExpiresAt: null,
-            isPro: false
-        });
+            isPro: false,
+        };
+        if (userData?.billingSource !== 'stripe') {
+            expireUpdates.billingStatus = 'unknown';
+            expireUpdates.billingSource = null;
+        }
+        batch.update(userDoc.ref, expireUpdates);
         const auditRef = db.collection("admin_audit").doc();
         auditBatch.set(auditRef, {
             action: "AUTO_EXPIRE_TESTER_PRO",
             adminUid: "SYSTEM",
             targetUserId: userDoc.id,
-            targetUserEmail: userDoc.data()?.email || "unknown",
+            targetUserEmail: userData?.email || "unknown",
             timestamp: admin.firestore.FieldValue.serverTimestamp()
         });
     });
@@ -180,22 +197,55 @@ exports.autoExpireTesterPro = functions.pubsub.schedule("every 6 hours").onRun(a
     await auditBatch.commit();
     return null;
 });
+exports.adminUpdateUserEmail = functions.https.onCall(async (data, context) => {
+    await assertAdmin(context);
+    const { targetUid, newEmail } = data;
+    if (!targetUid)
+        throw new functions.https.HttpsError("invalid-argument", "Target UID required");
+    if (!newEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(newEmail)) {
+        throw new functions.https.HttpsError("invalid-argument", "Valid email required");
+    }
+    const targetRef = db.collection("users").doc(targetUid);
+    const targetDoc = await targetRef.get();
+    if (!targetDoc.exists)
+        throw new functions.https.HttpsError("not-found", "User not found");
+    const prevEmail = targetDoc.data()?.email || "unknown";
+    await admin.auth().updateUser(targetUid, { email: newEmail });
+    await targetRef.update({
+        email: newEmail,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp()
+    });
+    await db.collection("admin_audit").add({
+        action: "ADMIN_UPDATE_EMAIL",
+        adminUid: context.auth?.uid,
+        targetUserId: targetUid,
+        prevEmail,
+        newEmail,
+        createdAt: admin.firestore.FieldValue.serverTimestamp()
+    });
+    return { success: true };
+});
 exports.onIssueCreated = functions.firestore.document('issues/{issueId}').onCreate(async (snap, context) => {
     const newData = snap.data();
-    if (newData.displayId && String(newData.displayId).startsWith('EC-')) {
-        return null;
+    const VALID_PREFIXES = ['AC-', 'EC-'];
+    if (newData.displayId && typeof newData.displayId === 'string') {
+        const hasValidPrefix = VALID_PREFIXES.some(prefix => newData.displayId.startsWith(prefix));
+        if (hasValidPrefix) {
+            console.log(`Issue ${context.params.issueId} already has valid displayId: ${newData.displayId} - skipping`);
+            return null;
+        }
     }
     try {
         const recentSnap = await db.collection('issues')
             .orderBy('timestamp', 'desc')
-            .limit(50)
+            .limit(100)
             .get();
         let maxId = 0;
         recentSnap.docs.forEach(doc => {
             const data = doc.data();
             const idStr = data.displayId || data.issueId;
             if (idStr && typeof idStr === 'string') {
-                const match = idStr.match(/EC-(\d+)/);
+                const match = idStr.match(/(?:EC|AC)-(\d+)/);
                 if (match) {
                     const num = parseInt(match[1], 10);
                     if (!isNaN(num) && num > maxId) {
@@ -211,12 +261,294 @@ exports.onIssueCreated = functions.firestore.document('issues/{issueId}').onCrea
             issueId: newDisplayId,
             updatedAt: admin.firestore.FieldValue.serverTimestamp()
         }, { merge: true });
-        console.log(`Assigned ${newDisplayId} to issue ${context.params.issueId}`);
+        console.log(`Assigned ${newDisplayId} to issue ${context.params.issueId} (was missing)`);
         return null;
     }
     catch (error) {
         console.error("Failed to auto-assign issue ID", error);
         return null;
+    }
+});
+const USAGE_SCORE = {
+    MAX_POINTS: 500,
+    WINDOW_DAYS: 30,
+    SESSION_POINTS: 1,
+    ACTION_POINTS: 5,
+    ACTION_DAILY_CAP: 3,
+    COMPLETION_POINTS: 15,
+};
+function getBandFromScore(score) {
+    if (score >= 85)
+        return 'Power User';
+    if (score >= 60)
+        return 'Active';
+    if (score >= 30)
+        return 'Engaged';
+    if (score >= 10)
+        return 'Curious';
+    return 'Dormant';
+}
+function toDateKey(ts) {
+    const d = ts ? ts.toDate() : new Date();
+    return d.toISOString().slice(0, 10);
+}
+function cutoffKey() {
+    const d = new Date();
+    d.setDate(d.getDate() - USAGE_SCORE.WINDOW_DAYS);
+    return d.toISOString().slice(0, 10);
+}
+function computeUsageScore(buckets) {
+    const cutoff = cutoffKey();
+    let totalPoints = 0;
+    let activeDays = 0;
+    let totalActions = 0;
+    let totalCompletions = 0;
+    for (const [day, bucket] of Object.entries(buckets)) {
+        if (day < cutoff)
+            continue;
+        if (bucket.sessions > 0) {
+            activeDays++;
+            totalPoints += USAGE_SCORE.SESSION_POINTS;
+        }
+        const cappedActions = Math.min(bucket.actions, USAGE_SCORE.ACTION_DAILY_CAP);
+        totalActions += cappedActions;
+        totalPoints += cappedActions * USAGE_SCORE.ACTION_POINTS;
+        totalCompletions += bucket.completions;
+        totalPoints += bucket.completions * USAGE_SCORE.COMPLETION_POINTS;
+    }
+    const score = Math.min(100, Math.round(totalPoints * 100 / USAGE_SCORE.MAX_POINTS));
+    return {
+        score,
+        band: getBandFromScore(score),
+        breakdown: { activeDays, coreActions: totalActions, completions: totalCompletions },
+    };
+}
+exports.onUsageEvent = functions.firestore
+    .document('usage_events/{eventId}')
+    .onCreate(async (snap, context) => {
+    const event = snap.data();
+    const { userId, eventType, timestamp } = event;
+    if (!userId || typeof userId !== 'string') {
+        console.warn(`Invalid usage event ${context.params.eventId}: missing userId`);
+        return null;
+    }
+    const validTypes = ['session', 'coreAction', 'completion'];
+    if (!validTypes.includes(eventType)) {
+        console.warn(`Invalid usage event ${context.params.eventId}: invalid eventType "${eventType}"`);
+        return null;
+    }
+    const userRef = db.collection('users').doc(userId);
+    const userDoc = await userRef.get();
+    if (!userDoc.exists) {
+        console.warn(`Usage event for unknown user ${userId}`);
+        return null;
+    }
+    const userData = userDoc.data();
+    const buckets = userData.usageDailyBuckets || {};
+    const day = toDateKey(timestamp);
+    if (!buckets[day]) {
+        buckets[day] = { sessions: 0, actions: 0, completions: 0 };
+    }
+    switch (eventType) {
+        case 'session':
+            buckets[day].sessions = (buckets[day].sessions || 0) + 1;
+            break;
+        case 'coreAction':
+            buckets[day].actions = (buckets[day].actions || 0) + 1;
+            break;
+        case 'completion':
+            buckets[day].completions = (buckets[day].completions || 0) + 1;
+            break;
+    }
+    const cutoff = cutoffKey();
+    for (const key of Object.keys(buckets)) {
+        if (key < cutoff)
+            delete buckets[key];
+    }
+    const { score, band, breakdown } = computeUsageScore(buckets);
+    await userRef.update({
+        usageDailyBuckets: buckets,
+        usageScore: score,
+        usageBand: band,
+        usageBreakdown: breakdown,
+    });
+    return null;
+});
+exports.pruneUsageWindows = functions.pubsub
+    .schedule('every 24 hours')
+    .onRun(async () => {
+    const cutoff = cutoffKey();
+    const BATCH_LIMIT = 450;
+    const snapshot = await db.collection('users')
+        .where('usageScore', '>', 0)
+        .get();
+    if (snapshot.empty)
+        return null;
+    let batch = db.batch();
+    let batchCount = 0;
+    let totalUpdated = 0;
+    for (const doc of snapshot.docs) {
+        const data = doc.data();
+        const buckets = data.usageDailyBuckets || {};
+        let pruned = false;
+        for (const key of Object.keys(buckets)) {
+            if (key < cutoff) {
+                delete buckets[key];
+                pruned = true;
+            }
+        }
+        if (!pruned)
+            continue;
+        const { score, band, breakdown } = computeUsageScore(buckets);
+        batch.update(doc.ref, {
+            usageDailyBuckets: buckets,
+            usageScore: score,
+            usageBand: band,
+            usageBreakdown: breakdown,
+        });
+        batchCount++;
+        totalUpdated++;
+        if (batchCount >= BATCH_LIMIT) {
+            await batch.commit();
+            batch = db.batch();
+            batchCount = 0;
+        }
+    }
+    if (batchCount > 0) {
+        await batch.commit();
+    }
+    console.log(`Pruned usage windows for ${totalUpdated} users`);
+    return null;
+});
+exports.stripeWebhook = functions.https.onRequest(async (req, res) => {
+    if (req.method !== 'POST') {
+        res.status(405).send('Method Not Allowed');
+        return;
+    }
+    const config = functions.config();
+    const stripeSecretKey = config.stripe?.secret_key;
+    const webhookSecret = config.stripe?.webhook_secret;
+    if (!stripeSecretKey || !webhookSecret) {
+        console.error('Stripe config missing. Set stripe.secret_key and stripe.webhook_secret via firebase functions:config:set');
+        res.status(500).send('Stripe not configured');
+        return;
+    }
+    const stripe = new stripe_1.default(stripeSecretKey, { apiVersion: '2024-04-10' });
+    const sig = req.headers['stripe-signature'];
+    let event;
+    try {
+        event = stripe.webhooks.constructEvent(req.rawBody, sig, webhookSecret);
+    }
+    catch (err) {
+        console.error('Stripe signature verification failed:', err.message);
+        res.status(400).send(`Webhook Error: ${err.message}`);
+        return;
+    }
+    const resolveUser = async (customerEmail) => {
+        if (!customerEmail)
+            return null;
+        const snap = await db.collection('users')
+            .where('email', '==', customerEmail)
+            .limit(1)
+            .get();
+        return snap.empty ? null : snap.docs[0];
+    };
+    const logUnresolved = async (eventType, email, eventId) => {
+        await db.collection('billing_events_unresolved').add({
+            stripeEventId: eventId,
+            eventType,
+            customerEmail: email || 'unknown',
+            createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+    };
+    const logStripeAudit = async (action, targetUid, metadata) => {
+        await db.collection('admin_audit').add({
+            action,
+            adminUid: 'STRIPE_WEBHOOK',
+            targetUserId: targetUid,
+            createdAt: admin.firestore.FieldValue.serverTimestamp(),
+            metadata,
+        });
+    };
+    try {
+        let customerEmail = null;
+        let billingUpdates = {};
+        let auditAction = '';
+        switch (event.type) {
+            case 'customer.subscription.created':
+            case 'customer.subscription.updated': {
+                const sub = event.data.object;
+                const customer = await stripe.customers.retrieve(sub.customer);
+                customerEmail = customer.email;
+                if (sub.status === 'active') {
+                    billingUpdates = {
+                        billingStatus: 'paid',
+                        billingSource: 'stripe',
+                        billingRef: sub.id,
+                        verifiedPaidAt: admin.firestore.FieldValue.serverTimestamp(),
+                    };
+                    auditAction = 'STRIPE_SUBSCRIPTION_ACTIVE';
+                }
+                else if (sub.status === 'trialing') {
+                    billingUpdates = {
+                        billingStatus: 'trial',
+                        billingSource: 'stripe',
+                        billingRef: sub.id,
+                    };
+                    auditAction = 'STRIPE_SUBSCRIPTION_TRIALING';
+                }
+                break;
+            }
+            case 'customer.subscription.deleted': {
+                const sub = event.data.object;
+                const customer = await stripe.customers.retrieve(sub.customer);
+                customerEmail = customer.email;
+                billingUpdates = {
+                    billingStatus: 'unknown',
+                    billingSource: null,
+                };
+                auditAction = 'STRIPE_SUBSCRIPTION_DELETED';
+                break;
+            }
+            case 'invoice.payment_succeeded': {
+                const invoice = event.data.object;
+                const customer = await stripe.customers.retrieve(invoice.customer);
+                customerEmail = customer.email;
+                billingUpdates = {
+                    billingStatus: 'paid',
+                    billingSource: 'stripe',
+                    verifiedPaidAt: admin.firestore.FieldValue.serverTimestamp(),
+                };
+                auditAction = 'STRIPE_PAYMENT_SUCCEEDED';
+                break;
+            }
+            default:
+                res.status(200).json({ received: true, handled: false });
+                return;
+        }
+        if (Object.keys(billingUpdates).length === 0) {
+            res.status(200).json({ received: true, handled: false });
+            return;
+        }
+        const userDoc = await resolveUser(customerEmail);
+        if (!userDoc) {
+            console.warn(`Stripe event ${event.type}: could not resolve user for email ${customerEmail}`);
+            await logUnresolved(event.type, customerEmail, event.id);
+            res.status(200).json({ received: true, resolved: false });
+            return;
+        }
+        await userDoc.ref.update(billingUpdates);
+        await logStripeAudit(auditAction, userDoc.id, {
+            stripeEventId: event.id,
+            customerEmail,
+            billingUpdates,
+        });
+        console.log(`Stripe ${event.type}: updated user ${userDoc.id} (${customerEmail}) → ${billingUpdates.billingStatus}`);
+        res.status(200).json({ received: true, resolved: true, userId: userDoc.id });
+    }
+    catch (err) {
+        console.error('Stripe webhook processing error:', err);
+        res.status(500).send('Internal error');
     }
 });
 //# sourceMappingURL=index.js.map

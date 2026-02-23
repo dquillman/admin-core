@@ -1,5 +1,8 @@
 import { Timestamp } from 'firebase/firestore';
 
+export type BillingStatus = 'paid' | 'tester' | 'comped' | 'trial' | 'unknown';
+export type BillingSource = 'stripe' | 'manual';
+
 export interface User {
     uid: string;
     email: string;
@@ -12,15 +15,10 @@ export interface User {
     lastName?: string;
     displayName?: string;
 
-    // Auth metadata (read-only in admin)
-    authProvider?: string;
-
     // Trial (Flattened as per request)
     trialActive?: boolean;
     trialEndsAt?: Timestamp | null;
 
-    // Legacy Support (optional, may still be used during migration)
-    isPro?: boolean;
     disabled?: boolean;
     createdAt?: Timestamp;
 
@@ -28,6 +26,12 @@ export interface User {
     archived?: boolean;
     archivedAt?: Timestamp | null;
     archivedBy?: string | null;
+
+    // Billing Status (Stripe-verified payments)
+    billingStatus?: BillingStatus;
+    billingSource?: BillingSource | null;
+    billingRef?: string | null;
+    verifiedPaidAt?: Timestamp | null;
 
     // Tester Access Fields
     testerOverride?: boolean;
@@ -63,10 +67,12 @@ export interface AuditLog {
     metadata?: any;
 }
 
-export interface TesterStats { // For summary cards
-    activeTesters: number;
-    expiringSoon: number; // e.g. next 3 days
-    totalGranted30d: number;
+export interface TesterStats {
+    grantedTesters: number;
+    revokedTesters: number;
+    disabledUsers: number;
+    totalSessions?: number;
+    lastUpdated?: any;
 }
 
 // --- Discovery & Marketing Types ---
@@ -105,7 +111,7 @@ export interface ConversionEvent {
     metadata?: any;
 }
 
-// --- 2112 Activity Types ---
+// --- Activity Types (used by GodsView / Activity2112) ---
 
 export type DecisionType = 'resource_allocation' | 'feature_prioritization' | 'risk_assessment' | 'simulation';
 export type DecisionStatus = 'pending' | 'approved' | 'rejected' | 'implemented' | 'simulated';
@@ -149,7 +155,6 @@ export interface FounderBriefing {
 }
 
 export type SimulationScenario = 'silent_app' | 'high_friction' | 'low_conversion';
-
 
 // --- Issues Management Types ---
 
