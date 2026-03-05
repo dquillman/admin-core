@@ -7,6 +7,7 @@ export const ISSUE_STATUS = {
     FIXED: 'resolved',
     RELEASED: 'released',
     CLOSED: 'closed',
+    ICEBOX: 'icebox',
     DELETED: 'deleted' // Soft delete status if used explicitly, though usually a boolean flag
 } as const;
 
@@ -22,13 +23,17 @@ export const APP_REGISTRY = {
     'exam-coach': {
         label: 'Exam Coach',
         prefix: 'EC'
+    },
+    'onboard-kit': {
+        label: 'OnboardKit',
+        prefix: 'OK'
     }
 } as const;
 
 export type AppKey = keyof typeof APP_REGISTRY;
 
 // Explicit ordering of app keys (Object.keys doesn't guarantee order)
-export const APP_KEYS: AppKey[] = ['admin-core', 'exam-coach'];
+export const APP_KEYS: AppKey[] = ['admin-core', 'exam-coach', 'onboard-kit'];
 
 // Helper to get app options for dropdowns (explicit order)
 export const APP_OPTIONS = APP_KEYS.map(key => ({
@@ -52,6 +57,7 @@ export const normalizeAppValue = (value: string | undefined | null): AppKey => {
     const lower = value.toLowerCase().replace(/\s+/g, '');
     if (lower === 'admincore' || lower === 'admin-core') return 'admin-core';
     if (lower === 'examcoach' || lower === 'exam-coach') return 'exam-coach';
+    if (lower === 'onboardkit' || lower === 'onboard-kit') return 'onboard-kit';
     return 'exam-coach'; // Default fallback
 };
 
@@ -63,7 +69,8 @@ export const ISSUE_STATUS_OPTIONS = [
     { value: ISSUE_STATUS.WORKING, label: 'In Progress' },
     { value: ISSUE_STATUS.FIXED, label: 'Resolved' },
     { value: ISSUE_STATUS.RELEASED, label: 'Released' },
-    { value: ISSUE_STATUS.CLOSED, label: 'Closed' }
+    { value: ISSUE_STATUS.CLOSED, label: 'Closed' },
+    { value: ISSUE_STATUS.ICEBOX, label: 'Future / Icebox' }
 ];
 
 export const ISSUE_PLATFORMS = {
@@ -84,6 +91,7 @@ export const getStatusColor = (status: string) => {
         case ISSUE_STATUS.FIXED: return 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20';
         case ISSUE_STATUS.RELEASED: return 'bg-emerald-900/30 text-emerald-300 border-emerald-700/50';
         case ISSUE_STATUS.CLOSED: return 'bg-slate-800 text-slate-500 border-slate-700';
+        case ISSUE_STATUS.ICEBOX: return 'bg-cyan-500/10 text-cyan-400 border-cyan-500/20';
         default: return 'bg-slate-800 text-slate-400 border-slate-700';
     }
 };
