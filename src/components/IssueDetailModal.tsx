@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { X, ExternalLink, Loader2, Save, Trash2, ShieldCheck, Lightbulb } from 'lucide-react';
 import type { ReportedIssue, IssueCategory, ReleaseVersion } from '../types';
-import { ISSUE_STATUS, ISSUE_STATUS_OPTIONS, ISSUE_PLATFORMS } from '../constants';
-import { updateIssueStatus, updateIssueDetails, addIssueNote, deleteIssue, subscribeToIssueCategories, subscribeToReleaseVersions, updateIssuePFV, fetchAllUsersLookup } from '../services/firestoreService';
+import { ISSUE_STATUS, ISSUE_STATUS_OPTIONS, ISSUE_PLATFORMS, normalizeAppValue } from '../constants';
+import { updateIssueStatus, updateIssueDetails, addIssueNote, deleteIssue, subscribeToIssueCategories, subscribeToReleaseVersions, updateIssuePFV, updateIssueRIV, fetchAllUsersLookup } from '../services/firestoreService';
 import { useAuth } from '../hooks/useAuth';
 
 interface IssueDetailModalProps {
@@ -12,7 +12,7 @@ interface IssueDetailModalProps {
 }
 
 export const IssueDetailModal: React.FC<IssueDetailModalProps> = ({ issue, onClose, onUpdate }) => {
-    const { isAdmin } = useAuth();
+    const { isAdmin, isSuperAdmin } = useAuth();
     // Debug log to confirm admin status for UI visibility
     // console.log('[IssueDetailModal] isAdmin:', isAdmin);
     const [noteText, setNoteText] = useState('');
@@ -40,9 +40,11 @@ export const IssueDetailModal: React.FC<IssueDetailModalProps> = ({ issue, onClo
     }, []);
 
     useEffect(() => {
-        const unsubscribe = subscribeToReleaseVersions((versions) => setReleaseVersions(versions));
+        // Load versions for the issue's app (normalize legacy app names)
+        const appId = issue?.app ? normalizeAppValue(issue.app) : undefined;
+        const unsubscribe = subscribeToReleaseVersions((versions) => setReleaseVersions(versions), appId);
         return () => unsubscribe();
-    }, []);
+    }, [issue?.app]);
 
     useEffect(() => {
         fetchAllUsersLookup()
@@ -66,7 +68,29 @@ export const IssueDetailModal: React.FC<IssueDetailModalProps> = ({ issue, onClo
         }
     };
 
+    const TERMINAL_STATUSES = [ISSUE_STATUS.FIXED, ISSUE_STATUS.RELEASED, ISSUE_STATUS.CLOSED];
+
     const handleUpdate = async (updates: Partial<ReportedIssue>) => {
+        // Rule: Cannot move status away from 'released' while releasedInVersion is set
+        if (
+            updates.status &&
+            updates.status !== ISSUE_STATUS.RELEASED &&
+            localIssue?.releasedInVersion
+        ) {
+            alert('Cannot change status away from "released" while releasedInVersion is set. Clear RIV first (super-admin required).');
+            return;
+        }
+
+        // Rule: PFV must be set before moving to resolved/released/closed
+        if (
+            updates.status &&
+            TERMINAL_STATUSES.includes(updates.status as any) &&
+            !localIssue?.plannedForVersion
+        ) {
+            alert('Planned for Version (PFV) must be set before marking an issue as resolved, released, or closed.');
+            return;
+        }
+
         // Optimistic update
         setLocalIssue(prev => prev ? ({ ...prev, ...updates }) : null);
 
@@ -309,6 +333,76 @@ export const IssueDetailModal: React.FC<IssueDetailModalProps> = ({ issue, onClo
                             </select>
                             <p className="text-[10px] text-slate-500 mt-1">Version where this fix is planned to ship.</p>
                         </div>
+
+                        {/* Released In Version (RIV) */}
+                        <div className="md:col-span-2">
+                            <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 flex items-center gap-2">
+                                Released In Version (RIV)
+                                {localIssue.releasedInVersion && !isSuperAdmin && (
+                                    <span className="bg-amber-500/10 text-amber-400 border border-amber-500/20 text-[9px] px-1.5 py-0.5 rounded">
+                                        Read-only
+                                    </span>
+                                )}
+                            </label>
+                            {localIssue.status === ISSUE_STATUS.RELEASED && !localIssue.releasedInVersion && (
+                                <p className="text-xs text-amber-400 font-medium mb-2">
+                                    ⚠️ Status is "released" — releasedInVersion must be set.
+                                </p>
+                            )}
+                            <select
+                                value={localIssue.releasedInVersion || ''}
+                                onChange={(e) => {
+                                    const newRIV = e.target.value || null;
+                                    const prevRIV = localIssue.releasedInVersion || null;
+
+                                    // Rule: RIV can only be set when status is 'released'
+                                    if (newRIV && localIssue.status !== ISSUE_STATUS.RELEASED) {
+                                        alert('releasedInVersion can only be set when status is "released".');
+                                        return;
+                                    }
+
+                                    // Rule: RIV cannot be changed if already set, unless super-admin
+                                    if (prevRIV && !isSuperAdmin) {
+                                        alert('releasedInVersion is read-only once set. Super-admin access required to modify.');
+                                        return;
+                                    }
+
+                                    setLocalIssue(prev => prev ? ({ ...prev, releasedInVersion: newRIV }) : null);
+                                    updateIssueRIV(issue.id, prevRIV, newRIV).then(() => {
+                                        onUpdate();
+                                    }).catch((err) => {
+                                        console.error("Failed to update RIV:", err);
+                                        setLocalIssue(issue);
+                                    });
+                                }}
+                                disabled={
+                                    !isAdmin ||
+                                    localIssue.status !== ISSUE_STATUS.RELEASED ||
+                                    (!!localIssue.releasedInVersion && !isSuperAdmin)
+                                }
+                                className={`w-full bg-slate-900 border text-sm rounded-lg p-2.5 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 transition-colors ${
+                                    (!isAdmin || localIssue.status !== ISSUE_STATUS.RELEASED || (!!localIssue.releasedInVersion && !isSuperAdmin))
+                                        ? 'opacity-50 cursor-not-allowed border-slate-700'
+                                        : (localIssue.status === ISSUE_STATUS.RELEASED && !localIssue.releasedInVersion)
+                                            ? 'border-amber-500/50 text-amber-500'
+                                            : 'border-slate-700 text-slate-200'
+                                }`}
+                            >
+                                <option value="">Not released</option>
+                                {releaseVersions.map(v => (
+                                    <option key={v.id} value={v.version}>
+                                        {v.version} ({v.status})
+                                    </option>
+                                ))}
+                            </select>
+                            <p className="text-[10px] text-slate-500 mt-1">
+                                {(!!localIssue.releasedInVersion && !isSuperAdmin)
+                                    ? 'Locked — contact super-admin to modify.'
+                                    : localIssue.status !== ISSUE_STATUS.RELEASED
+                                        ? 'Only available when status is "released".'
+                                        : 'Version this fix shipped in.'}
+                            </p>
+                        </div>
                     </section>
 
                     {/* 2. Description (Read-Only) */}
@@ -408,6 +502,65 @@ export const IssueDetailModal: React.FC<IssueDetailModalProps> = ({ issue, onClo
                             </div>
                         </div>
                     </section>
+
+                    {/* Telemetry (Auto-Captured) */}
+                    {(localIssue.environment || localIssue.os || localIssue.browser || localIssue.submittedFrom) && (
+                        <section className="pt-4 border-t border-slate-800">
+                            <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">Telemetry</h4>
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                                {localIssue.version && (
+                                    <div>
+                                        <label className="text-xs font-bold text-slate-600 uppercase tracking-wider">App Version</label>
+                                        <div className="mt-1 text-xs text-slate-400 font-mono">{localIssue.version}</div>
+                                    </div>
+                                )}
+                                {localIssue.environment && (
+                                    <div>
+                                        <label className="text-xs font-bold text-slate-600 uppercase tracking-wider">Environment</label>
+                                        <div className="mt-1 text-xs text-slate-400 font-mono">{localIssue.environment}</div>
+                                    </div>
+                                )}
+                                {localIssue.os && (
+                                    <div>
+                                        <label className="text-xs font-bold text-slate-600 uppercase tracking-wider">OS</label>
+                                        <div className="mt-1 text-xs text-slate-400 font-mono">{localIssue.os}</div>
+                                    </div>
+                                )}
+                                {localIssue.browser && (
+                                    <div>
+                                        <label className="text-xs font-bold text-slate-600 uppercase tracking-wider">Browser</label>
+                                        <div className="mt-1 text-xs text-slate-400 font-mono">{localIssue.browser}</div>
+                                    </div>
+                                )}
+                                {localIssue.submittedFrom && (
+                                    <div>
+                                        <label className="text-xs font-bold text-slate-600 uppercase tracking-wider">Submitted From</label>
+                                        <div className="mt-1 text-xs text-slate-400 font-mono">{localIssue.submittedFrom}</div>
+                                    </div>
+                                )}
+                                {localIssue.platform && (
+                                    <div>
+                                        <label className="text-xs font-bold text-slate-600 uppercase tracking-wider">Device Type</label>
+                                        <div className="mt-1 text-xs text-slate-400 font-mono">{localIssue.platform}</div>
+                                    </div>
+                                )}
+                                {(localIssue.examName || localIssue.examId) && (
+                                    <div>
+                                        <label className="text-xs font-bold text-slate-600 uppercase tracking-wider">Exam</label>
+                                        <div className="mt-1 text-xs text-slate-400 font-mono">{localIssue.examName || localIssue.examId}</div>
+                                    </div>
+                                )}
+                            </div>
+                            {localIssue.userAgent && (
+                                <details className="mt-3">
+                                    <summary className="text-xs text-slate-500 cursor-pointer hover:text-slate-400">Raw User Agent</summary>
+                                    <div className="mt-1 text-xs text-slate-500 font-mono bg-slate-950 p-2 rounded border border-slate-800 break-all">
+                                        {localIssue.userAgent}
+                                    </div>
+                                </details>
+                            )}
+                        </section>
+                    )}
 
                     {/* 4. Metadata (Read-Only) */}
                     <section className="grid grid-cols-2 md:grid-cols-4 gap-4 pt-4 border-t border-slate-800">

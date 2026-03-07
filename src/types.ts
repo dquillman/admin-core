@@ -156,6 +156,50 @@ export interface FounderBriefing {
 
 export type SimulationScenario = 'silent_app' | 'high_friction' | 'low_conversion';
 
+// --- OnboardKit Types ---
+
+export type OnboardingStepType = 'welcome' | 'form' | 'checklist' | 'video' | 'redirect';
+export type OnboardingFlowStatus = 'draft' | 'published' | 'archived';
+
+export interface OnboardingStep {
+    id: string;
+    type: OnboardingStepType;
+    title: string;
+    config: Record<string, any>;
+    order: number;
+}
+
+export interface OnboardingFlow {
+    id: string;
+    name: string;
+    description: string;
+    status: OnboardingFlowStatus;
+    steps: OnboardingStep[];
+    createdAt: Timestamp;
+    updatedAt: Timestamp;
+    publishedAt?: Timestamp;
+}
+
+export interface OnboardingSession {
+    id: string;
+    flowId: string;
+    userId: string;
+    currentStep: number;
+    completed: boolean;
+    startedAt: Timestamp;
+    completedAt?: Timestamp;
+    stepData: Record<string, any>;
+}
+
+export interface OnboardingAnalytics {
+    flowId: string;
+    totalSessions: number;
+    completedSessions: number;
+    stepDropoff: Record<string, number>;
+    avgCompletionTime: number;
+    updatedAt: Timestamp;
+}
+
 // --- Issues Management Types ---
 
 export interface IssueNote {
@@ -197,6 +241,15 @@ export interface ReportedIssue {
 
     // Release Planning
     plannedForVersion?: string | null; // semver from release_versions, null = not planned
+    releasedInVersion?: string | null; // semver from release_versions, set when status === 'released'
+
+    // Telemetry (auto-captured on submission)
+    environment?: string;       // e.g. 'development', 'production'
+    os?: string;                // e.g. 'Windows 11', 'macOS 14'
+    browser?: string;           // e.g. 'Chrome 120', 'Safari 17'
+    submittedFrom?: string;     // e.g. 'admin-core', 'exam-coach'
+    examId?: string;            // context: which exam was active
+    examName?: string;          // context: human-readable exam name
 }
 
 export interface IssueCategory {
@@ -211,8 +264,9 @@ export interface IssueCategory {
 export type ReleaseVersionStatus = 'planned' | 'in-progress' | 'released';
 
 export interface ReleaseVersion {
-    id: string;           // doc ID = version string (e.g. "1.15.1")
+    id: string;           // doc ID = appId__version (e.g. "exam-coach__1.15.1")
     version: string;      // x.xx.x format
+    appId?: string;       // APP_REGISTRY key (e.g. "exam-coach"); absent on legacy docs
     status: ReleaseVersionStatus;
     createdAt: Timestamp;
     createdBy: string;    // adminUid
