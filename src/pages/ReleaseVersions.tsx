@@ -13,7 +13,7 @@ import {
     updateReleaseVersionStatus,
     deleteReleaseVersion
 } from '../services/firestoreService';
-import { collection, query, orderBy, onSnapshot } from 'firebase/firestore';
+import { collection, query, orderBy, where, onSnapshot } from 'firebase/firestore';
 import { db } from '../firebase';
 import { normalizeAppValue } from '../constants';
 import type { ReleaseVersion, ReleaseVersionStatus } from '../types';
@@ -45,9 +45,17 @@ const ReleaseVersionsPage: React.FC = () => {
         }
         setLoading(true);
         const col = collection(db, 'release_versions');
-        const unsubscribe = onSnapshot(query(col, orderBy('version', 'desc')), (snapshot) => {
+        const norm = normalizeAppValue(appId);
+        // Server-side filter for non-exam-coach apps; client-side for exam-coach (catches legacy docs without appId)
+        const constraints = norm && norm !== 'exam-coach'
+            ? [where('appId', '==', norm), orderBy('version', 'desc')]
+            : [orderBy('version', 'desc')];
+        const unsubscribe = onSnapshot(query(col, ...constraints), (snapshot) => {
             let vers = snapshot.docs.map(d => ({ id: d.id, ...d.data() } as ReleaseVersion));
-            if (appId) vers = vers.filter(v => normalizeAppValue(v.appId || 'exam-coach') === normalizeAppValue(appId));
+            // Client-side filter for exam-coach to catch legacy docs without appId field
+            if (norm === 'exam-coach') {
+                vers = vers.filter(v => normalizeAppValue(v.appId || 'exam-coach') === 'exam-coach');
+            }
             setVersions(vers);
             setLoading(false);
         }, (err) => {
