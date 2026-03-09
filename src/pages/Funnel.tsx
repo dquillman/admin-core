@@ -16,7 +16,16 @@ function cn(...inputs: ClassValue[]) {
     return twMerge(clsx(inputs));
 }
 
-const FunnelStep = ({ label, count, total, icon: Icon, color, isLast }: any) => {
+interface FunnelStepProps {
+    label: string;
+    count: number;
+    total: number;
+    icon: React.FC<{ className?: string }>;
+    color: string;
+    isLast?: boolean;
+}
+
+const FunnelStep = ({ label, count, total, icon: Icon, color, isLast }: FunnelStepProps) => {
     const percentage = total > 0 ? (count / total) * 100 : 0;
 
     return (
@@ -49,7 +58,7 @@ const FunnelStep = ({ label, count, total, icon: Icon, color, isLast }: any) => 
 
 const FunnelPage: React.FC = () => {
     const { isAdmin, loading: authLoading } = useAuth();
-    const [metrics, setMetrics] = useState<any>(null);
+    const [metrics, setMetrics] = useState<{ users: number; activated: number; pricingViewed: number; upgradeClicked: number; converted: number } | null>(null);
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {

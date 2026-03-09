@@ -8,20 +8,20 @@ import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianG
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
 
-const toDate = (ts: any): Date | null => {
+const toDate = (ts: unknown): Date | null => {
     if (!ts) return null;
-    if (typeof ts.toDate === 'function') return ts.toDate();
+    if (typeof ts === 'object' && ts !== null && 'toDate' in ts && typeof (ts as { toDate: () => Date }).toDate === 'function') return (ts as { toDate: () => Date }).toDate();
     if (ts instanceof Date) return ts;
     return null;
 };
 
-const formatDate = (ts: any): string => {
+const formatDate = (ts: unknown): string => {
     const d = toDate(ts);
     if (!d) return '—';
     return d.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
 };
 
-const daysBetween = (from: any, to: any): number | null => {
+const daysBetween = (from: unknown, to: unknown): number | null => {
     const a = toDate(from);
     const b = toDate(to);
     if (!a || !b) return null;
@@ -30,7 +30,7 @@ const daysBetween = (from: any, to: any): number | null => {
     return Math.round(diff / (1000 * 60 * 60 * 24));
 };
 
-const monthKey = (ts: any): string => {
+const monthKey = (ts: unknown): string => {
     const d = toDate(ts);
     if (!d) return 'Unknown';
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
@@ -69,8 +69,8 @@ type RangePreset = '30d' | '90d' | '6mo' | '1yr' | 'all';
 interface ConvertedUser {
     uid: string;
     email: string;
-    testerGrantedAt: any;
-    verifiedPaidAt: any;
+    testerGrantedAt: unknown;
+    verifiedPaidAt: unknown;
     daysToConvert: number | null;
     usageScore?: number;
 }
@@ -106,7 +106,7 @@ const StatCard: React.FC<StatCardProps> = ({ icon, label, value, sub, accent = '
 
 // ─── Custom Tooltip ───────────────────────────────────────────────────────────
 
-const ChartTooltip = ({ active, payload, label }: any) => {
+const ChartTooltip = ({ active, payload, label }: { active?: boolean; payload?: Array<{ value: number }>; label?: string }) => {
     if (!active || !payload?.length) return null;
     return (
         <div className="bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 shadow-2xl text-sm">
@@ -128,7 +128,7 @@ const TesterConversion: React.FC = () => {
     // Date range filter state
     const [dateFrom, setDateFrom] = useState<string>(toInputDate(daysAgo(90)));
     const [dateTo, setDateTo] = useState<string>(toInputDate(today()));
-    const [activePreset, setActivePreset] = useState<RangePreset>('90d');
+    const [activePreset, setActivePreset] = useState<RangePreset | undefined>('90d');
 
     const applyPreset = (preset: RangePreset) => {
         setActivePreset(preset);
@@ -303,14 +303,14 @@ const TesterConversion: React.FC = () => {
                     <input
                         type="date"
                         value={dateFrom}
-                        onChange={e => { setDateFrom(e.target.value); setActivePreset(undefined as any); }}
+                        onChange={e => { setDateFrom(e.target.value); setActivePreset(undefined); }}
                         className="bg-slate-800 border border-slate-700 rounded-lg px-3 py-1.5 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500/40 focus:border-emerald-500/60 [color-scheme:dark]"
                     />
                     <span className="text-slate-600 text-xs">to</span>
                     <input
                         type="date"
                         value={dateTo}
-                        onChange={e => { setDateTo(e.target.value); setActivePreset(undefined as any); }}
+                        onChange={e => { setDateTo(e.target.value); setActivePreset(undefined); }}
                         className="bg-slate-800 border border-slate-700 rounded-lg px-3 py-1.5 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500/40 focus:border-emerald-500/60 [color-scheme:dark]"
                     />
                 </div>

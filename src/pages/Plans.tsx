@@ -19,7 +19,7 @@ const PlansPage: React.FC = () => {
     const { isAdmin, loading: authLoading } = useAuth(); // Auth gating check
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
-    const [config, setConfig] = useState<any>({
+    const [config, setConfig] = useState<Record<string, unknown>>({
         trialDays: 7,
         trialHasFullProAccess: true,
         planLimits: {
@@ -33,6 +33,7 @@ const PlansPage: React.FC = () => {
         if (!authLoading && isAdmin) {
             fetchConfig();
         }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [appId, authLoading, isAdmin]);
 
     const fetchConfig = async () => {

@@ -34,7 +34,8 @@ const BillingAlerts: React.FC = () => {
 
     useEffect(() => {
         fetchUsers();
-    }, []);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [filterByApp]);
 
     const allAlerts: TriggeredAlert[] = useMemo(
         () => evaluateAlerts(users, DEFAULT_ALERT_RULES),

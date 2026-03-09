@@ -20,7 +20,7 @@ interface IssueDetailModalProps {
 export const IssueDetailModal: React.FC<IssueDetailModalProps> = ({ issue, onClose, onUpdate }) => {
     const { isAdmin, isSuperAdmin } = useAuth();
     // Debug log to confirm admin status for UI visibility
-    // console.log('[IssueDetailModal] isAdmin:', isAdmin);
+
     const modalRef = useRef<HTMLDivElement>(null);
     const [noteText, setNoteText] = useState('');
     const [submittingNote, setSubmittingNote] = useState(false);
@@ -86,7 +86,7 @@ export const IssueDetailModal: React.FC<IssueDetailModalProps> = ({ issue, onClo
 
     const userMap = new Map(users.map(u => [u.uid, u.email]));
 
-    const formatDate = (val: any): string => {
+    const formatDate = (val: { toDate?: () => Date } | Date | string | number | null | undefined): string => {
         try {
             if (!val) return 'N/A';
             if (typeof val.toDate === 'function') return val.toDate().toLocaleString();
@@ -115,7 +115,7 @@ export const IssueDetailModal: React.FC<IssueDetailModalProps> = ({ issue, onClo
         // Rule: PFV must be set before moving to resolved/released/closed
         if (
             updates.status &&
-            TERMINAL_STATUSES.includes(updates.status as any) &&
+            TERMINAL_STATUSES.includes(updates.status) &&
             !localIssue?.plannedForVersion
         ) {
             const msg = 'Planned for Version (PFV) must be set before marking an issue as resolved, released, or closed.';
@@ -134,7 +134,7 @@ export const IssueDetailModal: React.FC<IssueDetailModalProps> = ({ issue, onClo
             if (updates.status) await updateIssueStatus(issue.id, updates.status);
 
             // Group detail updates
-            const detailUpdates: any = {};
+            const detailUpdates: Partial<ReportedIssue> = {};
             if (updates.severity) detailUpdates.severity = updates.severity;
             if (updates.type) detailUpdates.type = updates.type;
             if (updates.classification) detailUpdates.classification = updates.classification;
@@ -233,7 +233,7 @@ export const IssueDetailModal: React.FC<IssueDetailModalProps> = ({ issue, onClo
                             <div className="flex gap-2">
                                 <select
                                     value={(localIssue.type && categories.some(c => c.id === localIssue.type)) ? localIssue.type : 'Uncategorized'}
-                                    onChange={(e) => handleUpdate({ type: e.target.value as any })}
+                                    onChange={(e) => handleUpdate({ type: e.target.value })}
                                     disabled={!isAdmin}
                                     className={`flex-1 bg-slate-900 border text-slate-200 text-sm rounded-lg p-2.5 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 transition-colors shadow-[0_0_10px_rgba(59,130,246,0.05)] ${!isAdmin ? 'opacity-50 cursor-not-allowed border-slate-700' : 'border-brand-500/30'}`}
                                 >
@@ -257,7 +257,7 @@ export const IssueDetailModal: React.FC<IssueDetailModalProps> = ({ issue, onClo
                                         if (result) {
                                             const cat = categories.find(c => c.id === result.categoryId);
                                             if (window.confirm(`AI Recommendation:\n\nCategory: ${cat?.label || result.categoryId}\nConfidence: ${result.confidence}%\nReasons: ${result.reasons.join(', ')}\n\nApply this category?`)) {
-                                                handleUpdate({ type: result.categoryId as any });
+                                                handleUpdate({ type: result.categoryId });
                                             }
                                         } else {
                                             const msg = 'AI could not confidently recommend a category based on the available text.';
@@ -279,7 +279,7 @@ export const IssueDetailModal: React.FC<IssueDetailModalProps> = ({ issue, onClo
                             <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Severity</label>
                             <select
                                 value={localIssue.severity || 'S3'}
-                                onChange={(e) => handleUpdate({ severity: e.target.value as any })}
+                                onChange={(e) => handleUpdate({ severity: e.target.value as ReportedIssue['severity'] })}
                                 className="w-full bg-slate-900 border border-slate-700 text-slate-200 text-sm rounded-lg p-2.5 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 transition-colors"
                             >
                                 <option value="S1">S1 (Critical) - Blocking</option>
@@ -337,8 +337,8 @@ export const IssueDetailModal: React.FC<IssueDetailModalProps> = ({ issue, onClo
                             <div className="relative">
                                 <select
                                     value={localIssue.classification || 'unclassified'}
-                                    onChange={(e) => handleUpdate({ classification: e.target.value as any })}
-                                    className={`w-full bg-slate-900 border text-sm rounded-lg p-2.5 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 transition-colors ${(!localIssue.classification || (localIssue.classification as string) === 'unclassified')
+                                    onChange={(e) => handleUpdate({ classification: e.target.value as ReportedIssue['classification'] })}
+                                    className={`w-full bg-slate-900 border text-sm rounded-lg p-2.5 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 transition-colors ${(!localIssue.classification || localIssue.classification === 'unclassified')
                                         ? 'border-amber-500/50 text-amber-500'
                                         : 'border-slate-700 text-slate-200'
                                         }`}
@@ -369,6 +369,7 @@ export const IssueDetailModal: React.FC<IssueDetailModalProps> = ({ issue, onClo
                                     }).catch((err) => {
                                         console.error("Failed to update PFV:", err);
                                         setLocalIssue(prevState);
+                                        setValidationError(err instanceof Error ? err.message : 'Failed to update PFV.');
                                     });
                                 }}
                                 disabled={!isAdmin}
@@ -430,6 +431,7 @@ export const IssueDetailModal: React.FC<IssueDetailModalProps> = ({ issue, onClo
                                     }).catch((err) => {
                                         console.error("Failed to update RIV:", err);
                                         setLocalIssue(prevState);
+                                        setValidationError(err instanceof Error ? err.message : 'Failed to update RIV.');
                                     });
                                 }}
                                 disabled={

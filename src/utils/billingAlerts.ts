@@ -36,7 +36,7 @@ export const DEFAULT_ALERT_RULES: AlertRule[] = [
         description: 'Tester access expired but usage score still high',
         severity: 'warning',
         evaluate: (u) => {
-            if (!u.testerExpiresAt) return false;
+            if (!u.testerExpiresAt || typeof u.testerExpiresAt.toDate !== 'function') return false;
             const expired = u.testerExpiresAt.toDate() < new Date();
             return expired && (u.usageScore ?? 0) >= 30;
         },

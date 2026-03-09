@@ -35,7 +35,6 @@ import {
     Trophy,
     Sparkles,
     GitBranch,
-    Lock,
 } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { useApp } from '../context/AppContext';
@@ -137,12 +136,6 @@ const Sidebar: React.FC = () => {
                     >
                         <item.icon className="w-5 h-5 shrink-0" />
                         <span className="font-medium">{item.label}</span>
-                        {'superAdmin' in item && item.superAdmin && state.isSuperAdmin && (
-                            <Lock
-                                className="ml-auto w-3 h-3 text-amber-500/60 shrink-0 cursor-help"
-                                title="Some features on this page require super-admin privileges"
-                            />
-                        )}
                         {(item.to === '/tester-activity') && (
                             <span
                                 className="ml-auto text-[10px] bg-blue-500/10 text-blue-400 border border-blue-500/20 px-1.5 py-0.5 rounded-full font-mono uppercase cursor-help"

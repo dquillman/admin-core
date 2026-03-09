@@ -60,7 +60,7 @@ export const grantTesterPro = functions.https.onCall(async (data, context) => {
         testerExpiresAt: admin.firestore.Timestamp.fromDate(expiresAt),
         testerGrantedBy: context.auth?.uid,
         testerGrantedAt: admin.firestore.FieldValue.serverTimestamp(),
-        isPro: true,
+        plan: 'pro',
         ...(isStripePaid ? {} : {
             billingStatus: 'tester',
             billingSource: 'manual',
@@ -74,11 +74,11 @@ export const grantTesterPro = functions.https.onCall(async (data, context) => {
         targetUserEmail: prevState?.email || "unknown",
         prevState: {
             testerOverride: prevState?.testerOverride || false,
-            isPro: prevState?.isPro || false
+            plan: prevState?.plan || 'starter'
         },
         newState: {
             testerOverride: true,
-            isPro: true,
+            plan: 'pro',
             expiresAt: expiresAt.toISOString()
         },
         createdAt: admin.firestore.FieldValue.serverTimestamp()
@@ -106,7 +106,7 @@ export const revokeTesterPro = functions.https.onCall(async (data, context) => {
         testerExpiresAt: null,
         testerGrantedAt: null,
         testerGrantedBy: null,
-        isPro: false,
+        plan: 'starter',
     };
 
     // Preserve billing status if Stripe-verified paid
@@ -124,11 +124,11 @@ export const revokeTesterPro = functions.https.onCall(async (data, context) => {
         targetUserEmail: prevState?.email || "unknown",
         prevState: {
             testerOverride: prevState?.testerOverride,
-            isPro: prevState?.isPro
+            plan: prevState?.plan || 'starter'
         },
         newState: {
             testerOverride: false,
-            isPro: false
+            plan: 'starter'
         },
         createdAt: admin.firestore.FieldValue.serverTimestamp()
     });
@@ -187,7 +187,7 @@ export const autoExpireTesterPro = functions.pubsub.schedule("every 6 hours").on
         const expireUpdates: Record<string, any> = {
             testerOverride: false,
             testerExpiresAt: null,
-            isPro: false,
+            plan: 'starter',
         };
 
         // Preserve billing status if Stripe-verified paid
@@ -467,7 +467,7 @@ export const onUsageEvent = functions.firestore
             return null;
         }
 
-        const userData = userDoc.data()!;
+        const userData = userDoc.data() || {};
         const buckets: Record<string, DailyBucket> = userData.usageDailyBuckets || {};
 
         // Determine the day key from the event timestamp
@@ -605,11 +605,21 @@ export const stripeWebhook = functions.https.onRequest(async (req, res) => {
 
     const stripe = new Stripe(stripeSecretKey, { apiVersion: '2024-04-10' as any });
 
-    const sig = req.headers['stripe-signature'] as string;
+    const sig = req.headers['stripe-signature'];
+    if (!sig) {
+        res.status(400).send('Missing stripe-signature header');
+        return;
+    }
+
+    if (!req.rawBody) {
+        res.status(400).send('Missing request body');
+        return;
+    }
+
     let event: Stripe.Event;
 
     try {
-        event = stripe.webhooks.constructEvent(req.rawBody, sig, webhookSecret);
+        event = stripe.webhooks.constructEvent(req.rawBody, sig as string, webhookSecret);
     } catch (err: any) {
         console.error('Stripe signature verification failed:', err.message);
         res.status(400).send(`Webhook Error: ${err.message}`);
@@ -737,7 +747,19 @@ export const stripeWebhook = functions.https.onRequest(async (req, res) => {
         res.status(200).json({ received: true, resolved: true, userId: userDoc.id });
     } catch (err: any) {
         console.error('Stripe webhook processing error:', err);
-        res.status(500).send('Internal error');
+
+        // Non-retryable errors: return 200 so Stripe doesn't keep retrying
+        const nonRetryable =
+            err?.code === 'not-found' ||
+            err?.code === 'invalid-argument' ||
+            err?.message?.includes('No such customer') ||
+            err?.message?.includes('resource_missing');
+
+        if (nonRetryable) {
+            res.status(200).json({ received: true, error: err.message });
+        } else {
+            res.status(500).send('Internal error');
+        }
     }
 });
 

@@ -63,7 +63,7 @@ const TimelineEntryRow: React.FC<TimelineEntryRowProps> = ({ entry, isLast }) =>
                             )}
                         </div>
                         <span className="text-xs text-slate-500 whitespace-nowrap flex-shrink-0">
-                            {formatTimestamp(entry.createdAt as any)}
+                            {formatTimestamp(entry.createdAt)}
                         </span>
                     </div>
 
@@ -152,14 +152,14 @@ const AuditTimeline: React.FC = () => {
     useEffect(() => {
         setLimitCount(PAGE_SIZE);
         fetchEntries(PAGE_SIZE);
-    }, [appliedAction, appliedAdmin]); // eslint-disable-line react-hooks/exhaustive-deps
+    }, [fetchEntries]);
 
     // Refetch when limitCount increases (load more)
     useEffect(() => {
         if (limitCount > PAGE_SIZE) {
             fetchEntries(limitCount, true);
         }
-    }, [limitCount]); // eslint-disable-line react-hooks/exhaustive-deps
+    }, [limitCount, fetchEntries]);
 
     const handleApplyFilters = () => {
         setAppliedAction(actionInput.trim());

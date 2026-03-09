@@ -14,7 +14,7 @@ const WeeklyReviewModal: React.FC = () => {
     const [isOpen, setIsOpen] = useState(false);
     const [loading, setLoading] = useState(true);
     const [submitting, setSubmitting] = useState(false);
-    const [metrics, setMetrics] = useState<any>(null);
+    const [metrics, setMetrics] = useState<{ totalUsers: number; activatedUsers: number; activationRate: number } | null>(null);
     const [decision, setDecision] = useState('');
 
     useEffect(() => {

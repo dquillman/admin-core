@@ -16,6 +16,7 @@ import {
     arrayUnion,
     type QueryDocumentSnapshot,
     type QueryConstraint,
+    type DocumentReference,
 } from 'firebase/firestore';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { db, auth } from '../firebase';
@@ -42,6 +43,17 @@ const stripImmutableFields = <T extends Record<string, unknown>>(updates: T): Om
     return safeUpdates;
 };
 
+/**
+ * Resolve the canonical displayId from Firestore issue doc data.
+ * Checks displayId (canonical), then issueId/issue_id (legacy), then falls back to doc.id if it looks like an EC- prefix.
+ */
+const resolveDisplayId = (data: Record<string, unknown>, docId: string): string | undefined => {
+    const id = (data.displayId || data.issueId || data.issue_id) as string | undefined;
+    if (id) return id;
+    if (docId.startsWith('EC-')) return docId;
+    return undefined;
+};
+
 // GLOBAL KILL SWITCH - STRICT NO AGGREGATION
 export const CLIENT_STATS_ENABLED = true; // Enabled but only for safe value reading
 
@@ -50,7 +62,7 @@ export interface AdminStats {
     revokedTesters: number;
     disabledUsers: number;
     totalSessions?: number;
-    lastUpdated?: any;
+    lastUpdated?: Timestamp | Date;
 }
 
 /**
@@ -101,9 +113,9 @@ export const getDashboardStats = async (): Promise<AdminStats> => {
         ]);
 
         return {
-            grantedTesters: grantedSnap.data().count,
+            grantedTesters: grantedSnap.data()?.count ?? 0,
             revokedTesters: 0, // Cannot easily count revoked without expensive audit query
-            disabledUsers: disabledSnap.data().count,
+            disabledUsers: disabledSnap.data()?.count ?? 0,
             lastUpdated: new Date()
         };
     } catch (error) {
@@ -168,7 +180,7 @@ export const getAllUsers = async (): Promise<User[]> => {
 
 export const getTesterUsers = async (activeOnly: boolean = false): Promise<User[]> => {
     const usersCol = collection(db, 'users');
-    let q = query(usersCol, where('testerOverride', '==', true));
+    const q = query(usersCol, where('testerOverride', '==', true));
 
     if (activeOnly) {
         // Firestore limitation: filtering by multiple fields requires composite index
@@ -199,7 +211,7 @@ export const getRecentAuditLogs = async (appId: string, limitCount: number = 10)
 /**
  * Logs an admin action to the specific app's audit trail
  */
-export const logAdminAction = async (appId: string, action: string, targetUid: string, metadata: any = {}) => {
+export const logAdminAction = async (appId: string, action: string, targetUid: string, metadata: Record<string, unknown> = {}) => {
     const user = auth.currentUser;
     if (!user) return;
 
@@ -217,7 +229,7 @@ export const logAdminAction = async (appId: string, action: string, targetUid: s
 /**
  * Global Admin Audit (Top-Level)
  */
-export const logGlobalAdminAction = async (action: string, targetUid: string, metadata: any = {}) => {
+export const logGlobalAdminAction = async (action: string, targetUid: string, metadata: Record<string, unknown> = {}) => {
     const user = auth.currentUser;
     if (!user) return;
 
@@ -282,7 +294,7 @@ export const revokeTesterAccess = async (targetUid: string) => {
     if (!userSnap.exists()) throw new Error("User not found");
 
     const userData = userSnap.data();
-    const updates: Record<string, any> = {
+    const updates: Record<string, unknown> = {
         testerOverride: false,
         testerExpiresAt: null,
         testerGrantedAt: null,
@@ -307,7 +319,7 @@ export const fixTesterAccess = async (targetUid: string) => {
 };
 
 // Helper for audit logs
-const pickAccessFields = (data: any) => ({
+const pickAccessFields = (data: Record<string, unknown> | undefined) => ({
     testerOverride: data?.testerOverride ?? null,
     testerExpiresAt: data?.testerExpiresAt ?? null,
     plan: data?.plan ?? null,
@@ -516,7 +528,7 @@ export const setBillingStatus = async (targetUid: string, status: Exclude<Billin
         throw new Error("Cannot override Stripe-verified paid status via admin UI");
     }
 
-    const updates: Record<string, any> = {
+    const updates: Record<string, unknown> = {
         billingStatus: status,
         billingSource: status === 'unknown' ? null : 'manual',
     };
@@ -593,7 +605,7 @@ export const getAppConfig = async (appId: string, docId: string) => {
     return configDoc.exists() ? configDoc.data() : null;
 };
 
-export const updateAppConfig = async (appId: string, docId: string, data: any) => {
+export const updateAppConfig = async (appId: string, docId: string, data: Record<string, unknown>) => {
     await requireAdmin();
     await updateDoc(doc(db, 'apps', appId, 'config', docId), data);
     await logAdminAction(appId, `update_config_${docId}`, 'system', { newData: data });
@@ -612,7 +624,7 @@ export const getSources = async (appId: string) => {
     return snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 };
 
-export const addSource = async (appId: string, source: any) => {
+export const addSource = async (appId: string, source: Record<string, unknown>) => {
     await requireAdmin();
     const sourcesCol = collection(db, 'apps', appId, 'sources');
     const docRef = await addDoc(sourcesCol, {
@@ -629,7 +641,7 @@ export const deleteSource = async (appId: string, sourceId: string) => {
     await logAdminAction(appId, 'delete_source', sourceId);
 };
 
-export const updateSource = async (appId: string, sourceId: string, data: any) => {
+export const updateSource = async (appId: string, sourceId: string, data: Record<string, unknown>) => {
     await requireAdmin();
     await updateDoc(doc(db, 'apps', appId, 'sources', sourceId), data);
     await logAdminAction(appId, 'update_source', sourceId, data);
@@ -745,17 +757,10 @@ export const getReportedIssues = async (limitCount: number = 100): Promise<Repor
         const snap = await safeGetDocs(q, { fallback: [], context: 'Issues', description: 'Get Issues' });
         return snap.docs.map(doc => {
             const data = doc.data();
-            // Robust ID resolution: Try displayId (canonical), then issue_id/issueId (legacy), then doc.id
-            let finalDisplayId = data.displayId || data.issueId || data.issue_id;
-
-            if (!finalDisplayId && doc.id.startsWith('EC-')) {
-                finalDisplayId = doc.id;
-            }
-
             return {
                 id: doc.id,
                 ...data,
-                displayId: finalDisplayId // Pass raw value (undefined if missing)
+                displayId: resolveDisplayId(data, doc.id)
             } as ReportedIssue;
         });
     } catch (error) {
@@ -821,6 +826,11 @@ export const createIssue = async (data: {
 }): Promise<string> => {
     await requireAdmin();
 
+    // Validate title is non-empty
+    if (!data.title || !data.title.trim()) {
+        throw new Error('Issue title is required and cannot be empty.');
+    }
+
     // Validate app key
     if (!APP_KEYS.includes(data.app)) {
         throw new Error(`Invalid app key: ${data.app}. Must be one of: ${APP_KEYS.join(', ')}`);
@@ -867,16 +877,10 @@ export const subscribeToReportedIssues = (limitCount: number = 100, onData: (iss
     return onSnapshot(q, (snapshot) => {
         const issues = snapshot.docs.map(doc => {
             const data = doc.data();
-            let finalDisplayId = data.displayId || data.issueId || data.issue_id;
-
-            if (!finalDisplayId && doc.id.startsWith('EC-')) {
-                finalDisplayId = doc.id;
-            }
-
             return {
                 id: doc.id,
                 ...data,
-                displayId: finalDisplayId
+                displayId: resolveDisplayId(data, doc.id)
             } as ReportedIssue;
         });
         onData(issues);
@@ -911,7 +915,7 @@ export const assignMissingIssueIds = async (): Promise<number> => {
     const snap = await safeGetDocs(issuesCol, { fallback: [], context: 'Issues', description: 'Assign IDs Check' });
 
     // Group docs missing displayIds by their app prefix
-    const missingByPrefix = new Map<string, any[]>();
+    const missingByPrefix = new Map<string, QueryDocumentSnapshot[]>();
     snap.docs.forEach(d => {
         const data = d.data();
         const idStr = data.displayId || data.issueId || data.issue_id;
@@ -957,7 +961,7 @@ export const repairDuplicateIssueIds = async (): Promise<{ fixed: number; log: s
 
     // Group docs by prefix, then find duplicates within each prefix
     // key = "PREFIX-NUM", value = list of {ref, ts, prefix, num}
-    const byPrefix = new Map<string, Map<number, { ref: any; ts: number }[]>>();
+    const byPrefix = new Map<string, Map<number, { ref: DocumentReference; ts: number }[]>>();
 
     snap.docs.forEach(d => {
         const data = d.data();
@@ -986,7 +990,7 @@ export const repairDuplicateIssueIds = async (): Promise<{ fixed: number; log: s
 
     for (const [prefix, idMap] of byPrefix) {
         // Find duplicates within this prefix
-        const duplicates: { num: number; docs: { ref: any; ts: number }[] }[] = [];
+        const duplicates: { num: number; docs: { ref: DocumentReference; ts: number }[] }[] = [];
         idMap.forEach((docs, num) => {
             if (docs.length > 1) duplicates.push({ num, docs });
         });
@@ -1036,7 +1040,7 @@ export const repairMismatchedPrefixes = async (): Promise<{ fixed: number; log: 
     const snap = await safeGetDocs(issuesCol, { fallback: [], context: 'Issues', description: 'Repair Mismatched Prefixes' });
 
     // Find docs where the displayId prefix doesn't match the app's expected prefix
-    const mismatched: { ref: any; app: string; currentId: string; expectedPrefix: string }[] = [];
+    const mismatched: { ref: DocumentReference; app: string; currentId: string; expectedPrefix: string }[] = [];
 
     snap.docs.forEach(d => {
         const data = d.data();
@@ -1121,7 +1125,7 @@ export const addIssueCategory = async (cat: Omit<IssueCategory, 'createdAt' | 'c
 export const updateIssueCategory = async (id: string, updates: Partial<IssueCategory>) => {
     await requireAdmin();
     // Prevent ID updates
-    const { id: _, ...safeUpdates } = updates;
+    const { id: _unused, ...safeUpdates } = updates; // eslint-disable-line @typescript-eslint/no-unused-vars
     await updateDoc(doc(db, 'issue_categories', id), safeUpdates);
 };
 
@@ -1149,16 +1153,19 @@ export const batchImportIssues = async (rows: ImportIssueRow[]): Promise<number>
     }
 
     if (rows.length === 0) return 0;
-    if (rows.length > 500) throw new Error('Batch limit exceeded: maximum 500 rows per import.');
 
     importInProgress = true;
     try {
         const VALID_STATUSES: Set<string> = new Set([
             'new', 'reviewed', 'backlogged', 'in_progress', 'resolved', 'released', 'closed',
         ]);
+        const VALID_SEVERITIES: Set<string> = new Set(['S1', 'S2', 'S3', 'S4']);
         const validateStatus = (status?: string): string => {
             const normalized = normalizeIssueStatus(status);
             return VALID_STATUSES.has(normalized) ? normalized : 'new';
+        };
+        const validateSeverity = (sev?: string): string => {
+            return sev && VALID_SEVERITIES.has(sev) ? sev : 'S3';
         };
 
         // Get the true max per prefix before writing, so imported issues get unique sequential IDs
@@ -1171,48 +1178,54 @@ export const batchImportIssues = async (rows: ImportIssueRow[]): Promise<number>
         }
 
         const { writeBatch } = await import('firebase/firestore');
-        const batch = writeBatch(db);
         const user = auth.currentUser;
 
-        rows.forEach(row => {
-            const ref = doc(collection(db, 'issues'));
-            const rowPrefix = getAppPrefix((row.app || '') as AppKey);
-            const nextId = (maxByPrefix.get(rowPrefix) || 0) + 1;
-            maxByPrefix.set(rowPrefix, nextId);
-            const displayId = `${rowPrefix}-${nextId}`;
+        // Chunk into sub-batches of 400 to stay safely under Firestore's 500 operation limit
+        const CHUNK_SIZE = 400;
+        for (let i = 0; i < rows.length; i += CHUNK_SIZE) {
+            const chunk = rows.slice(i, i + CHUNK_SIZE);
+            const batch = writeBatch(db);
 
-            const issueDoc: Record<string, any> = {
-                description: row.title,
-                severity: row.severity,
-                status: validateStatus(row.status),
-                type: row.category || '',
-                app: row.app || '',
-                userId: row.createdBy || user?.email || null,
-                message: row.summary || '',
-                displayId,
-                issueId: displayId,
-                url: null,
-                deleted: false,
-                timestamp: serverTimestamp(),
-                createdAt: serverTimestamp(),
-            };
+            chunk.forEach(row => {
+                const ref = doc(collection(db, 'issues'));
+                const rowPrefix = getAppPrefix((row.app || '') as AppKey);
+                const nextId = (maxByPrefix.get(rowPrefix) || 0) + 1;
+                maxByPrefix.set(rowPrefix, nextId);
+                const displayId = `${rowPrefix}-${nextId}`;
 
-            if (row.source) {
-                issueDoc.source = row.source;
-            }
+                const issueDoc: Record<string, unknown> = {
+                    description: (row.title || '').slice(0, 2000),
+                    severity: validateSeverity(row.severity),
+                    status: validateStatus(row.status),
+                    type: row.category || '',
+                    app: row.app || '',
+                    userId: row.createdBy || user?.email || null,
+                    message: row.summary || '',
+                    displayId,
+                    issueId: displayId,
+                    url: null,
+                    deleted: false,
+                    timestamp: serverTimestamp(),
+                    createdAt: serverTimestamp(),
+                };
 
-            if (row.notes) {
-                issueDoc.notes = [{
-                    text: row.notes,
-                    adminUid: user?.uid || 'import',
-                    createdAt: Timestamp.now(),
-                }];
-            }
+                if (row.source) {
+                    issueDoc.source = row.source;
+                }
 
-            batch.set(ref, issueDoc);
-        });
+                if (row.notes) {
+                    issueDoc.notes = [{
+                        text: row.notes,
+                        adminUid: user?.uid || 'import',
+                        createdAt: Timestamp.now(),
+                    }];
+                }
 
-        await batch.commit();
+                batch.set(ref, issueDoc);
+            });
+
+            await batch.commit();
+        }
         return rows.length;
     } finally {
         importInProgress = false;
@@ -1395,7 +1408,7 @@ export interface AuditTimelineEntry {
     adminEmail?: string;
     targetUserId?: string;
     createdAt: Timestamp;
-    metadata?: any;
+    metadata?: Record<string, unknown>;
 }
 
 export const getAuditTimeline = async (filters?: {
@@ -1455,12 +1468,12 @@ export const getBillingAuditByMonth = async (): Promise<AuditTimelineEntry[]> =>
 };
 
 // --- Usage Scoring Config ---
-export const getUsageScoringConfig = async (): Promise<Record<string, any> | null> => {
+export const getUsageScoringConfig = async (): Promise<Record<string, unknown> | null> => {
     const configDoc = await safeGetDoc(doc(db, 'config', 'usage_scoring'), { fallback: null, context: 'Config', description: 'Get Usage Scoring Config' });
-    return configDoc.exists() ? configDoc.data() as Record<string, any> : null;
+    return configDoc.exists() ? configDoc.data() as Record<string, unknown> : null;
 };
 
-export const updateUsageScoringConfig = async (config: Record<string, any>) => {
+export const updateUsageScoringConfig = async (config: Record<string, unknown>) => {
     await requireAdmin();
     await setDoc(doc(db, 'config', 'usage_scoring'), {
         ...config,
@@ -1471,7 +1484,12 @@ export const updateUsageScoringConfig = async (config: Record<string, any>) => {
 };
 
 // --- Unresolved Billing Events ---
-export const getUnresolvedBillingEvents = async (): Promise<any[]> => {
+export interface UnresolvedBillingEvent {
+    id: string;
+    [key: string]: unknown;
+}
+
+export const getUnresolvedBillingEvents = async (): Promise<UnresolvedBillingEvent[]> => {
     await requireAdmin();
     const col = collection(db, 'billing_events_unresolved');
     const q = query(col, orderBy('createdAt', 'desc'), limit(200));

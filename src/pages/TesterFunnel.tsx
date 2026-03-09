@@ -26,7 +26,7 @@ interface StageRow {
     color: string;
 }
 
-const CustomTooltip = ({ active, payload }: any) => {
+const CustomTooltip = ({ active, payload }: { active?: boolean; payload?: Array<{ payload: { name: string; count: number } }> }) => {
     if (active && payload && payload.length) {
         const { name, count } = payload[0].payload;
         return (

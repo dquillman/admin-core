@@ -142,7 +142,7 @@ const LeadsPage: React.FC = () => {
                     <Filter className="w-4 h-4 text-slate-500" />
                     <select
                         value={statusFilter}
-                        onChange={(e) => setStatusFilter(e.target.value as any)}
+                        onChange={(e) => setStatusFilter(e.target.value as LeadStatus | 'all')}
                         className="bg-slate-800 border border-slate-700 rounded-xl py-2 px-3 text-white text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/50"
                     >
                         <option value="all">All Statuses</option>

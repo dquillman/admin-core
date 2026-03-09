@@ -27,7 +27,7 @@ const DataIntegrityPanel: React.FC = () => {
             checks.push({ name: 'Users Collection', status: 'warn', message: 'No users found', details: 'Collection might be empty or missing.' });
         } else {
             let validSchema = true;
-            usersSnap.docs.forEach((doc: any) => {
+            usersSnap.docs.forEach((doc) => {
                 const data = doc.data();
                 if (!data.email || !data.uid) validSchema = false;
             });
@@ -70,6 +70,7 @@ const DataIntegrityPanel: React.FC = () => {
     };
 
     useEffect(() => {
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- async data fetch pattern
         checkIntegrity();
     }, []);
 

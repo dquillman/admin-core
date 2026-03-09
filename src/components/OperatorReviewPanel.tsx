@@ -26,6 +26,7 @@ export const OperatorReviewPanel: React.FC<OperatorReviewPanelProps> = ({ isOpen
 
     const analysis = useMemo(() => {
         const results: AnalysisResult[] = [];
+        // eslint-disable-next-line react-hooks/purity -- intentional snapshot of current time for stale detection
         const now = Date.now();
         const oneDay = 24 * 60 * 60 * 1000;
 

@@ -19,10 +19,11 @@ interface SafeReadOptions<T> {
 /**
  * Standardized logging for Firestore errors
  */
-const logFirestoreError = (error: any, context: string, description: string) => {
+const logFirestoreError = (error: unknown, context: string, description: string) => {
+    const err = error as { message?: string; code?: string };
     console.error(`[Firestore Error] [${context}] ${description}`, {
-        message: error.message,
-        code: error.code,
+        message: err.message,
+        code: err.code,
         timestamp: new Date().toISOString()
     });
 };
@@ -34,7 +35,7 @@ const logFirestoreError = (error: any, context: string, description: string) => 
 export const safeGetDocs = async <T>(
     q: Query,
     options: SafeReadOptions<T[]> = { fallback: [], context: 'Unknown', description: 'Fetch Docs' }
-): Promise<QuerySnapshot | { docs: any[]; empty: boolean; size: number }> => {
+): Promise<QuerySnapshot | { docs: never[]; empty: boolean; size: number; forEach: () => void; docChanges: () => never[] }> => {
     try {
         const snapshot = await getDocs(q);
         return snapshot;
@@ -47,7 +48,7 @@ export const safeGetDocs = async <T>(
             size: 0,
             forEach: () => { },
             docChanges: () => []
-        } as any;
+        };
     }
 };
 
@@ -68,7 +69,7 @@ export const safeGetDoc = async <T>(
             exists: () => false,
             data: () => options.fallback,
             id: ref.id
-        } as any;
+        };
     }
 };
 
@@ -88,6 +89,6 @@ export const safeGetCount = async (
         logFirestoreError(error, options.context, options.description || 'safeGetCount failed');
         return {
             data: () => ({ count: options.fallback })
-        } as any;
+        };
     }
 };

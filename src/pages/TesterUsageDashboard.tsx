@@ -27,12 +27,13 @@ const TesterUsageDashboard: React.FC = () => {
     const [sortDir, setSortDir] = useState<SortDir>('desc');
 
     useEffect(() => {
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- async data fetch pattern
         setLoading(true);
         getTesterUsers()
             .then(data => setTesters(filterByApp(data)))
             .catch((err) => console.error('Failed to fetch testers:', err))
             .finally(() => setLoading(false));
-    }, []);
+    }, [filterByApp]);
 
     const testerLabel = (u: User): string => {
         const name = [u.firstName, u.lastName].filter(Boolean).join(' ') || u.displayName || '';
@@ -108,7 +109,7 @@ const TesterUsageDashboard: React.FC = () => {
         return counts;
     }, [filteredTesters]);
 
-    const SortIndicator = ({ col }: { col: SortKey }) => {
+    const sortIndicator = (col: SortKey) => {
         if (col !== sortKey) return null;
         return <span className="ml-1 text-brand-400">{sortDir === 'desc' ? '↓' : '↑'}</span>;
     };
@@ -217,19 +218,19 @@ const TesterUsageDashboard: React.FC = () => {
                                 <tr className="bg-slate-950/50 border-b border-slate-800">
                                     <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-widest">Tester</th>
                                     <th className={thClass('score')} onClick={() => toggleSort('score')}>
-                                        Score<SortIndicator col="score" />
+                                        Score{sortIndicator("score")}
                                     </th>
                                     <th className={thClass('band')} onClick={() => toggleSort('band')}>
-                                        Band<SortIndicator col="band" />
+                                        Band{sortIndicator("band")}
                                     </th>
                                     <th className={thClass('activeDays', 'right')} onClick={() => toggleSort('activeDays')}>
-                                        Active Days<SortIndicator col="activeDays" />
+                                        Active Days{sortIndicator("activeDays")}
                                     </th>
                                     <th className={thClass('coreActions', 'right')} onClick={() => toggleSort('coreActions')}>
-                                        Core Actions<SortIndicator col="coreActions" />
+                                        Core Actions{sortIndicator("coreActions")}
                                     </th>
                                     <th className={thClass('completions', 'right')} onClick={() => toggleSort('completions')}>
-                                        Completions<SortIndicator col="completions" />
+                                        Completions{sortIndicator("completions")}
                                     </th>
                                     <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-widest">Confidence</th>
                                 </tr>

@@ -8,10 +8,12 @@ import { getBandFromScore, BAND_COLORS } from '../utils/usageScore';
 const DORMANT_THRESHOLD = 10;
 const LOW_ACTIVITY_THRESHOLD = 30;
 
-const formatDate = (ts: any): string => {
+const formatDate = (ts: unknown): string => {
     if (!ts) return '—';
     try {
-        const date = ts.toDate ? ts.toDate() : new Date(ts);
+        const date = (typeof ts === 'object' && ts !== null && 'toDate' in ts && typeof (ts as { toDate: () => Date }).toDate === 'function')
+            ? (ts as { toDate: () => Date }).toDate()
+            : new Date(ts as string | number);
         return date.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
     } catch {
         return '—';
@@ -24,6 +26,7 @@ const InactivePaidUsers: React.FC = () => {
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- async data fetch pattern
         setLoading(true);
         getAllUsers()
             .then(data => setAllUsers(filterByApp(data)))

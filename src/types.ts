@@ -2,6 +2,7 @@ import { Timestamp } from 'firebase/firestore';
 
 export type BillingStatus = 'paid' | 'tester' | 'comped' | 'trial' | 'unknown';
 export type BillingSource = 'stripe' | 'manual';
+export type UserTag = 'tester' | 'friend' | 'user' | 'influencer' | 'beta';
 
 export interface User {
     uid: string;
@@ -44,6 +45,9 @@ export interface User {
         endsAt?: Timestamp;
     };
 
+    // Admin classification tag (independent of access tier)
+    userTag?: UserTag;
+
     // Usage Score (pre-computed, admin-only)
     usageScore?: number;       // 0–100
     usageBand?: UsageBand;
@@ -53,7 +57,7 @@ export interface User {
         completions?: number;
     };
 
-    [key: string]: any;
+    [key: string]: unknown;
 }
 
 export type UsageBand = 'Dormant' | 'Curious' | 'Engaged' | 'Active' | 'Power User';
@@ -64,7 +68,7 @@ export interface AuditLog {
     adminUid: string;
     targetUid?: string;
     timestamp: Timestamp;
-    metadata?: any;
+    metadata?: Record<string, unknown>;
 }
 
 export interface TesterStats {
@@ -72,7 +76,7 @@ export interface TesterStats {
     revokedTesters: number;
     disabledUsers: number;
     totalSessions?: number;
-    lastUpdated?: any;
+    lastUpdated?: Timestamp;
 }
 
 // --- Discovery & Marketing Types ---
@@ -108,7 +112,7 @@ export interface ConversionEvent {
     uid: string;
     event: 'pricing_viewed' | 'upgrade_clicked' | 'converted';
     timestamp: Timestamp;
-    metadata?: any;
+    metadata?: Record<string, unknown>;
 }
 
 // --- Activity Types (used by GodsView / Activity2112) ---
@@ -165,7 +169,7 @@ export interface OnboardingStep {
     id: string;
     type: OnboardingStepType;
     title: string;
-    config: Record<string, any>;
+    config: Record<string, unknown>;
     order: number;
 }
 
@@ -188,7 +192,7 @@ export interface OnboardingSession {
     completed: boolean;
     startedAt: Timestamp;
     completedAt?: Timestamp;
-    stepData: Record<string, any>;
+    stepData: Record<string, unknown>;
 }
 
 export interface OnboardingAnalytics {
@@ -234,7 +238,7 @@ export interface ReportedIssue {
     attachmentUrl?: string | null;
     deleted?: boolean;
     updatedAt?: Timestamp;
-    classification?: 'blocking' | 'misleading' | 'trust' | 'cosmetic';
+    classification?: 'unclassified' | 'blocking' | 'misleading' | 'trust' | 'cosmetic';
 
     // Category Governance
     suggestedCategory?: string; // Optional user suggestion if type is 'Uncategorized'

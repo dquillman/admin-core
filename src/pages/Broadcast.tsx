@@ -13,8 +13,17 @@ const Broadcast = () => {
     const [recipientCount, setRecipientCount] = useState<number | null>(null);
     const [isSaving, setIsSaving] = useState(false);
     const [result, setResult] = useState<{ success: boolean; message: string } | null>(null);
-    const [drafts, setDrafts] = useState<any[]>([]);
-    const [loadedDraft, setLoadedDraft] = useState<any | null>(null);
+    interface BroadcastDraft {
+        id: string;
+        subject: string;
+        body: string;
+        audience: 'testers' | 'all';
+        status: string;
+        createdAt: unknown;
+        createdBy?: string;
+    }
+    const [drafts, setDrafts] = useState<BroadcastDraft[]>([]);
+    const [loadedDraft, setLoadedDraft] = useState<BroadcastDraft | null>(null);
 
     // Fetch Drafts
     React.useEffect(() => {
@@ -26,7 +35,7 @@ const Broadcast = () => {
                     limit(20)
                 );
                 const snapshot = await getDocs(q);
-                setDrafts(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
+                setDrafts(snapshot.docs.map(d => ({ id: d.id, ...d.data() } as BroadcastDraft)));
             } catch (err) {
                 console.error("Failed to fetch drafts", err);
             }
@@ -50,10 +59,10 @@ const Broadcast = () => {
             let count = 0;
             if (aud === 'testers') {
                 // Strictly match Users Page logic: testerOverride is the primary flag
-                count = users.filter((u: any) => u.testerOverride === true).length;
+                count = users.filter((u) => (u as Record<string, unknown>).testerOverride === true).length;
             } else if (aud === 'all') {
                 // All non-admin users
-                count = users.filter((u: any) => u.role !== 'admin').length;
+                count = users.filter((u) => (u as Record<string, unknown>).role !== 'admin').length;
             }
 
             setRecipientCount(count);
@@ -267,7 +276,7 @@ const Broadcast = () => {
                                         onClick={() => {
                                             setSubject(draft.subject);
                                             setMessage(draft.body);
-                                            setAudience(draft.audience as any);
+                                            setAudience(draft.audience);
                                             setLoadedDraft(draft);
                                         }}
                                         className="p-3 rounded bg-slate-950 border border-slate-800 hover:border-indigo-500/50 cursor-pointer transition-all group"

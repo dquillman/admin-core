@@ -21,7 +21,7 @@ function normalizeSeverity(raw: string): string {
     return raw.trim().toUpperCase().replace(/\s+/g, '');
 }
 
-function validateRow(row: Record<string, any>, index: number): ParsedRow {
+function validateRow(row: Record<string, unknown>, index: number): ParsedRow {
     const errors: string[] = [];
 
     const title = (row.title ?? '').toString().trim();
@@ -78,17 +78,23 @@ export const ImportIssuesModal: React.FC<ImportIssuesModalProps> = ({ isOpen, on
             const reader = new FileReader();
             reader.onload = (e) => {
                 try {
-                    const data = JSON.parse(e.target?.result as string);
+                    const text = e.target?.result;
+                    if (typeof text !== 'string') {
+                        setParseError('Failed to read file contents.');
+                        return;
+                    }
+                    const data = JSON.parse(text);
                     if (!Array.isArray(data)) {
                         setParseError('JSON file must contain an array of objects.');
                         return;
                     }
-                    const parsed = data.map((item: any, i: number) => validateRow(item, i + 1));
+                    const parsed = data.map((item: Record<string, unknown>, i: number) => validateRow(item, i + 1));
                     processRows(parsed);
                 } catch {
                     setParseError('Failed to parse JSON file. Check format.');
                 }
             };
+            reader.onerror = () => setParseError('Failed to read file.');
             reader.readAsText(file);
         } else if (ext === 'csv') {
             Papa.parse(file, {
@@ -99,7 +105,7 @@ export const ImportIssuesModal: React.FC<ImportIssuesModalProps> = ({ isOpen, on
                         setParseError(`CSV parse error: ${result.errors[0].message}`);
                         return;
                     }
-                    const parsed = result.data.map((item: any, i: number) => validateRow(item, i + 1));
+                    const parsed = result.data.map((item: Record<string, unknown>, i: number) => validateRow(item as Record<string, unknown>, i + 1));
                     processRows(parsed);
                 },
                 error: (err) => {
@@ -130,7 +136,7 @@ export const ImportIssuesModal: React.FC<ImportIssuesModalProps> = ({ isOpen, on
     const handleConfirmImport = async () => {
         setStep('importing');
         try {
-            const toImport = validRows.map(({ _rowIndex, _errors, ...row }) => row);
+            const toImport = validRows.map(({ _rowIndex: _r, _errors: _e, ...row }) => row); // eslint-disable-line @typescript-eslint/no-unused-vars
             const count = await batchImportIssues(toImport);
             setImportResult({ success: true, count });
             setStep('done');

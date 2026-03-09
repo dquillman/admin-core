@@ -46,6 +46,7 @@ const TesterActivity: React.FC = () => {
             fetchInitialData();
             getTesterUsers().then(data => setTesters(filterByApp(data))).catch((err) => console.error('Failed to fetch testers:', err));
         }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [appId, filters.dateRange, filters.activeOnly, authLoading, isAdmin, filterByApp]);
 
     const fetchInitialData = async () => {

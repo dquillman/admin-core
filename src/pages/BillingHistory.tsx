@@ -20,15 +20,15 @@ const ACTION_COLORS: Record<string, string> = {
     FIX_TESTER: 'text-amber-400 bg-amber-400/10 border-amber-400/20',
 };
 
-const formatTimestamp = (ts: any): string => {
+const formatTimestamp = (ts: unknown): string => {
     if (!ts) return '-';
-    if (typeof ts.toDate === 'function') {
-        return ts.toDate().toLocaleString();
+    if (typeof ts === 'object' && ts !== null && 'toDate' in ts && typeof (ts as { toDate: () => Date }).toDate === 'function') {
+        return (ts as { toDate: () => Date }).toDate().toLocaleString();
     }
     return String(ts);
 };
 
-const truncateJson = (obj: any, maxLen = 120): string => {
+const truncateJson = (obj: unknown, maxLen = 120): string => {
     if (!obj) return '-';
     try {
         const str = JSON.stringify(obj);

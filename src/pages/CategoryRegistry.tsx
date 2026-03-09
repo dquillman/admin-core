@@ -28,6 +28,8 @@ const CategoryRegistry: React.FC = () => {
     const [newDesc, setNewDesc] = useState('');
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [deprecatingId, setDeprecatingId] = useState<string | null>(null);
+    const [seeding, setSeeding] = useState(false);
 
     // Promotion Data
     const [suggestions, setSuggestions] = useState<{ term: string; count: number; issueIds: string[] }[]>([]);
@@ -35,7 +37,7 @@ const CategoryRegistry: React.FC = () => {
     // Suggestion State
     const [suggestionsQueue, setSuggestionsQueue] = useState<{
         issue: ReportedIssue;
-        suggestion: any; // SuggestionResult imported dynamically
+        suggestion: { categoryId: string; confidence: number; reason: string };
     }[]>([]);
     const [selectedIssueIds, setSelectedIssueIds] = useState<Set<string>>(new Set());
 
@@ -77,6 +79,7 @@ const CategoryRegistry: React.FC = () => {
     }, [activeTab]);
 
     const handleRunSuggestions = async () => {
+        if (loading) return;
         setLoading(true);
         try {
             const { analyzeIssue } = await import('../services/suggestionService');
@@ -114,7 +117,7 @@ const CategoryRegistry: React.FC = () => {
     };
 
     const handleApplySuggestions = async () => {
-        if (selectedIssueIds.size === 0) return;
+        if (selectedIssueIds.size === 0 || isSubmitting) return;
         if (!window.confirm(`Apply category updates to ${selectedIssueIds.size} issues? This cannot be easily undone.`)) return;
 
         setIsSubmitting(true);
@@ -175,13 +178,17 @@ const CategoryRegistry: React.FC = () => {
     };
 
     const handleDeprecate = async (id: string, currentStatus: string) => {
+        if (deprecatingId) return;
         if (!window.confirm(`Are you sure you want to ${currentStatus === 'active' ? 'deprecate' : 'reactivate'} this category?`)) return;
+        setDeprecatingId(id);
         try {
             await updateIssueCategory(id, {
                 status: currentStatus === 'active' ? 'deprecated' : 'active'
             });
         } catch (err: unknown) {
             alert(err instanceof Error ? err.message : 'Unknown error');
+        } finally {
+            setDeprecatingId(null);
         }
     };
 
@@ -220,32 +227,35 @@ const CategoryRegistry: React.FC = () => {
                         <>
                             <button
                                 onClick={async () => {
+                                    if (seeding) return;
                                     if (!window.confirm('Seed default categories? Existing categories will remain unchanged.')) return;
                                     try {
-                                        setLoading(true);
+                                        setSeeding(true);
                                         const { seedDefaultCategories } = await import('../services/firestoreService');
                                         const count = await seedDefaultCategories();
                                         alert(`Seeding complete. Added ${count} new categories.`);
                                     } catch (err: unknown) {
                                         alert(`Error seeding: ${err instanceof Error ? err.message : 'Unknown error'}`);
                                     } finally {
-                                        setLoading(false);
+                                        setSeeding(false);
                                     }
                                 }}
-                                className="px-4 py-2 rounded-md text-sm font-medium text-slate-400 hover:text-white hover:bg-slate-700 transition-all border border-transparent"
+                                disabled={seeding}
+                                className="px-4 py-2 rounded-md text-sm font-medium text-slate-400 hover:text-white hover:bg-slate-700 transition-all border border-transparent disabled:opacity-50 disabled:cursor-not-allowed"
                                 title="Add default categories if missing"
                             >
-                                Seed Defaults
+                                {seeding ? 'Seeding...' : 'Seed Defaults'}
                             </button>
                             <button
                                 onClick={handleRunSuggestions}
-                                className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${activeTab === 'suggestions'
+                                disabled={loading}
+                                className={`px-4 py-2 rounded-md text-sm font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed ${activeTab === 'suggestions'
                                     ? 'bg-indigo-600 text-white shadow-lg'
                                     : 'text-indigo-400 hover:text-indigo-300 hover:bg-slate-700'
                                     }`}
                                 title="Analyze uncategorized issues"
                             >
-                                Suggest Categories
+                                {loading ? 'Analyzing...' : 'Suggest Categories'}
                             </button>
                         </>
                     )}
@@ -306,7 +316,8 @@ const CategoryRegistry: React.FC = () => {
                                                 <td className="p-4 text-right">
                                                     <button
                                                         onClick={() => handleDeprecate(cat.id, cat.status)}
-                                                        className="p-2 hover:bg-slate-800 rounded-lg text-slate-500 hover:text-white transition-colors"
+                                                        disabled={deprecatingId !== null}
+                                                        className="p-2 hover:bg-slate-800 rounded-lg text-slate-500 hover:text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                                                         title={cat.status === 'active' ? 'Deprecate' : 'Reactivate'}
                                                     >
                                                         {cat.status === 'active' ? <Archive className="w-4 h-4" /> : <CheckCircle2 className="w-4 h-4" />}
@@ -453,7 +464,7 @@ const CategoryRegistry: React.FC = () => {
                                                         {item.issue.message || item.issue.description || 'No Content'}
                                                     </div>
                                                     <div className="text-xs text-slate-500 font-mono mt-1">
-                                                        {(item.issue as any).displayId || item.issue.id} • {(item.issue.suggestedCategory ? `User suggested: "${item.issue.suggestedCategory}"` : 'No user intent')}
+                                                        {item.issue.displayId || item.issue.id} • {(item.issue.suggestedCategory ? `User suggested: "${item.issue.suggestedCategory}"` : 'No user intent')}
                                                     </div>
                                                 </td>
                                                 <td className="p-4">
@@ -489,9 +500,10 @@ const CategoryRegistry: React.FC = () => {
                             </p>
                             <button
                                 onClick={handleRunSuggestions}
-                                className="mt-6 px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-lg font-medium transition-colors"
+                                disabled={loading}
+                                className="mt-6 px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                             >
-                                Re-run Analysis
+                                {loading ? 'Analyzing...' : 'Re-run Analysis'}
                             </button>
                         </div>
                     )}

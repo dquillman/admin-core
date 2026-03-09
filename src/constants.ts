@@ -102,6 +102,9 @@ export const ISSUE_PLATFORMS = {
 export type IssuePlatform = typeof ISSUE_PLATFORMS[keyof typeof ISSUE_PLATFORMS];
 
 // Helper for UI Coloring (Tailwind classes)
+/** Issue is "stale" if it hasn't been updated in this many ms */
+export const STALE_ISSUE_THRESHOLD_MS = 14 * 86400000; // 14 days
+
 export const getStatusColor = (status: string) => {
     switch (status) {
         case ISSUE_STATUS.NEW: return 'bg-brand-500/10 text-brand-400 border-brand-500/20';

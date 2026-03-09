@@ -56,7 +56,7 @@ export const getLiveTutorEngagement = async (): Promise<number> => {
             );
             const snapshot = await safeGetCount(q, { fallback: 0, context: 'Activity', description: 'Live Tutor Signal' });
             return snapshot.data().count;
-        } catch (indexError) {
+        } catch {
             console.warn("Index missing for optimized signal, falling back to client-side aggregation (safe for small scale).");
             // Fallback: Fetch recently active (limit 1000) and count manually
             const fallbackQ = query(

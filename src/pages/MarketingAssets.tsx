@@ -25,6 +25,7 @@ const MarketingAssets: React.FC = () => {
         if (!authLoading && isAdmin) {
             loadData();
         }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [authLoading, isAdmin]);
 
     const loadData = async () => {

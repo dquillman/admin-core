@@ -85,6 +85,7 @@ const UsersPage: React.FC = () => {
     const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
     const [undoArchive, setUndoArchive] = useState<{ uid: string; email: string } | null>(null);
     const undoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const fetchIdRef = useRef(0);
     const [trialAppId, setTrialAppId] = useState<AppKey>('exam-coach');
     const [trialDays, setTrialDays] = useState<number>(14);
 
@@ -106,12 +107,14 @@ const UsersPage: React.FC = () => {
     const { isAdmin, loading: authLoading } = useAuth();
     const { appId, filterByApp } = useAppSubscribers();
 
-    // Initial Load
+    // Initial Load — deps list all state that fetchUsers/fetchStats read, not the functions themselves
+    // (adding fetchUsers would cause infinite re-renders since it's recreated each render)
     useEffect(() => {
         if (!authLoading && isAdmin) {
             fetchUsers();
             fetchStats();
         }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [searchTerm, showTestersOnly, showArchived, filterBand, filterBilling, sortByUsage, authLoading, isAdmin, appId, filterByApp]);
 
     // Clear undo-archive timer on unmount
@@ -129,6 +132,7 @@ const UsersPage: React.FC = () => {
 
     const fetchUsers = async () => {
         if (!isAdmin) return;
+        const thisId = ++fetchIdRef.current;
         setLoading(true);
         try {
             let data: User[];
@@ -175,12 +179,15 @@ const UsersPage: React.FC = () => {
                 });
             }
 
+            // Guard against stale fetch overwriting newer results
+            if (thisId !== fetchIdRef.current) return;
             setUsers(filtered);
         } catch (err) {
+            if (thisId !== fetchIdRef.current) return;
             console.error("Fetch users error:", err);
             setMessage({ type: 'error', text: err instanceof Error ? err.message : "Failed to load users" });
         } finally {
-            setLoading(false);
+            if (thisId === fetchIdRef.current) setLoading(false);
         }
     };
 

@@ -9,6 +9,14 @@
           "admin-core-20292"
         ]
       }
+    },
+    "overture-ea4ec": {
+      "hosting": {
+        "admin": [
+          "admin-core-staging",
+          "overture-ea4ec"
+        ]
+      }
     }
   },
   "etags": {}

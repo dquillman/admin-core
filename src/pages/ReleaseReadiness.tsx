@@ -60,6 +60,7 @@ const ReleaseReadiness: React.FC = () => {
 
     // Subscribe to release versions for active app
     useEffect(() => {
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- async data fetch pattern
         setVersionsLoading(true);
         const unsubscribe = subscribeToReleaseVersions((data) => {
             setVersions(data);
@@ -71,6 +72,7 @@ const ReleaseReadiness: React.FC = () => {
     // Fetch issues whenever selected version changes
     useEffect(() => {
         if (!selectedVersion) {
+            // eslint-disable-next-line react-hooks/set-state-in-effect -- async data fetch pattern
             setIssues([]);
             setIssuesError(null);
             return;
@@ -126,7 +128,7 @@ const ReleaseReadiness: React.FC = () => {
         }
         // Append any statuses not in the known order (e.g. 'unknown')
         for (const key of Object.keys(groups)) {
-            if (!STATUS_GROUP_ORDER.includes(key as any)) {
+            if (!STATUS_GROUP_ORDER.includes(key)) {
                 ordered.push([key, groups[key]]);
             }
         }

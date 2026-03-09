@@ -22,6 +22,9 @@ export const useAppSubscribers = () => {
         getAppSubscriptionUids(normalizedAppId).then(uids => {
             cacheRef.current[normalizedAppId] = uids;
             setSubscriberUids(uids);
+        }).catch(err => {
+            console.error(`[useAppSubscribers] Failed to load subscribers for ${normalizedAppId}:`, err);
+        }).finally(() => {
             setLoading(false);
         });
     }, [normalizedAppId]);

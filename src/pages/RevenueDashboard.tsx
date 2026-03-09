@@ -44,12 +44,18 @@ const StatCard: React.FC<StatCardProps> = ({ icon, label, value, sub, accent = '
 
 // ---- custom tooltip ----
 
-const DarkTooltip: React.FC<any> = ({ active, payload, label }) => {
+interface TooltipProps {
+    active?: boolean;
+    payload?: Array<{ name: string; value: number; color?: string; stroke?: string }>;
+    label?: string;
+}
+
+const DarkTooltip: React.FC<TooltipProps> = ({ active, payload, label }) => {
     if (!active || !payload?.length) return null;
     return (
         <div className="bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm shadow-xl">
             <p className="text-slate-300 font-medium mb-1">{label}</p>
-            {payload.map((p: any, i: number) => (
+            {payload.map((p, i) => (
                 <p key={i} style={{ color: p.color || p.stroke || '#3b82f6' }}>
                     {p.name}: <span className="font-semibold">{p.value}</span>
                 </p>
@@ -68,6 +74,7 @@ const RevenueDashboard: React.FC = () => {
     const [error, setError] = useState<string | null>(null);
 
     useEffect(() => {
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- async data fetch pattern
         setLoading(true);
         setError(null);
 
@@ -79,11 +86,11 @@ const RevenueDashboard: React.FC = () => {
                 setUsers(filterByApp(fetchedUsers));
                 setAuditEntries(fetchedAudit);
             })
-            .catch((err) => {
-                setError(err?.message || 'Failed to load revenue data.');
+            .catch((err: unknown) => {
+                setError(err instanceof Error ? err.message : 'Failed to load revenue data.');
             })
             .finally(() => setLoading(false));
-    }, []);
+    }, [filterByApp]);
 
     // ---- derived stats ----
 
@@ -111,7 +118,7 @@ const RevenueDashboard: React.FC = () => {
                 meta.status === 'paid' ||
                 meta.billingStatus === 'paid';
             if (!isPaid) continue;
-            const month = formatMonth(entry.createdAt as any);
+            const month = formatMonth(entry.createdAt);
             monthMap[month] = (monthMap[month] ?? 0) + 1;
         }
 
@@ -136,7 +143,7 @@ const RevenueDashboard: React.FC = () => {
         for (const entry of auditEntries) {
             if (entry.action !== 'SET_BILLING_STATUS') continue;
             const meta = entry.metadata ?? {};
-            const month = formatMonth(entry.createdAt as any);
+            const month = formatMonth(entry.createdAt);
             ensureMonth(month);
 
             const newStatus: string = meta.newStatus ?? meta.status ?? meta.billingStatus ?? '';

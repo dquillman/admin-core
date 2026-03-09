@@ -63,6 +63,7 @@ export default function UsageBillingView() {
 
     useEffect(() => {
         let cancelled = false;
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- async data fetch pattern
         setLoading(true);
         getAllUsers()
             .then((data) => {
@@ -77,7 +78,7 @@ export default function UsageBillingView() {
                 if (!cancelled) setLoading(false);
             });
         return () => { cancelled = true; };
-    }, []);
+    }, [filterByApp]);
 
     const allMismatches = useMemo(() => getMismatches(users), [users]);
 

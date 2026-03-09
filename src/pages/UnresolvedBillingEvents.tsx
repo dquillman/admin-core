@@ -8,9 +8,9 @@ interface BillingEvent {
     type?: string;
     email?: string;
     stripeEventId?: string;
-    createdAt?: any;
+    createdAt?: unknown;
     resolved?: boolean;
-    resolvedAt?: any;
+    resolvedAt?: unknown;
     resolvedBy?: string;
     resolutionNotes?: string;
     [key: string]: unknown;
@@ -25,9 +25,9 @@ interface ResolveState {
     };
 }
 
-const formatDate = (ts: any): string => {
+const formatDate = (ts: unknown): string => {
     if (!ts) return '—';
-    if (typeof ts.toDate === 'function') return ts.toDate().toLocaleString();
+    if (typeof ts === 'object' && ts !== null && 'toDate' in ts && typeof (ts as { toDate: () => Date }).toDate === 'function') return (ts as { toDate: () => Date }).toDate().toLocaleString();
     if (ts instanceof Date) return ts.toLocaleString();
     return String(ts);
 };

@@ -4,13 +4,14 @@ import type { User } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
 import { auth, db } from '../firebase';
 
-export type UserRole = 'admin' | 'user';
+export type UserRole = 'admin' | 'super-admin' | 'user';
 
 interface AuthState {
     user: User | null;
     role: UserRole | null;
     loading: boolean;
     isAdmin: boolean;
+    isSuperAdmin: boolean;
 }
 
 export const useAuth = () => {
@@ -19,6 +20,7 @@ export const useAuth = () => {
         role: null,
         loading: true,
         isAdmin: false,
+        isSuperAdmin: false,
     });
 
     useEffect(() => {
@@ -55,15 +57,16 @@ export const useAuth = () => {
                         user,
                         role,
                         loading: false,
-                        isAdmin: role === 'admin',
+                        isAdmin: role === 'admin' || role === 'super-admin',
+                        isSuperAdmin: role === 'super-admin',
                     });
 
                 } catch (error) {
                     console.error("Auth Error:", error);
-                    setState({ user, role: 'user', loading: false, isAdmin: false });
+                    setState({ user, role: 'user', loading: false, isAdmin: false, isSuperAdmin: false });
                 }
             } else {
-                setState({ user: null, role: null, loading: false, isAdmin: false });
+                setState({ user: null, role: null, loading: false, isAdmin: false, isSuperAdmin: false });
             }
         });
 

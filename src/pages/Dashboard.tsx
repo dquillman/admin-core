@@ -27,7 +27,7 @@ import {
     Cell
 } from 'recharts';
 
-const StatCard = ({ title, value, icon: Icon, color, subtitle }: any) => (
+const StatCard = ({ title, value, icon: Icon, color, subtitle }: { title: string; value: string | number; icon: React.ElementType; color: string; subtitle?: string }) => (
     <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 transition-all duration-300 hover:border-slate-700 group">
         <div className="flex items-start justify-between mb-4">
             <div className={`p-3 rounded-2xl ${color} bg-opacity-10 group-hover:scale-110 transition-transform duration-300`}>
@@ -48,8 +48,8 @@ const StatCard = ({ title, value, icon: Icon, color, subtitle }: any) => (
 const Dashboard: React.FC = () => {
     const { appId } = useApp();
     const { isAdmin, loading: authLoading } = useAuth();
-    const [stats, setStats] = useState<any>(null);
-    const [auditLogs, setAuditLogs] = useState<any[]>([]);
+    const [stats, setStats] = useState<{ grantedTesters: number; revokedTesters: number; disabledUsers: number; totalSessions?: number } | null>(null);
+    const [auditLogs, setAuditLogs] = useState<Array<{ id: string; action?: string; timestamp?: { toDate?: () => Date }; adminEmail?: string; [key: string]: unknown }>>([]);
     const [activation, setActivation] = useState<{ totalUsers: number; activatedUsers: number; activationRate: number } | null>(null);
     const [broadActivity, setBroadActivity] = useState<number>(0);
     const [weeklyFocus, setWeeklyFocus] = useState<string | null>(null);
@@ -62,26 +62,24 @@ const Dashboard: React.FC = () => {
         const fetchData = async () => {
             if (!isAdmin) return;
             try {
-                const [statsData, logsData, activationData, broadActivityCount] = await Promise.all([
+                const [statsResult, logsResult, activationResult, broadResult, reviewResult] = await Promise.allSettled([
                     getDashboardStats(),
                     getRecentAuditLogs(appId, 6),
                     getActivationMetricsService(),
-                    getBroadWeeklyActivity()
+                    getBroadWeeklyActivity(),
+                    getLatestWeeklyReview()
                 ]);
 
-                // Fetch latest review specifically for the focus card
-                // Imported dynamically or handled here? 
-                // We need to import it.
-                // Assuming import is added below.
+                const results = [statsResult, logsResult, activationResult, broadResult, reviewResult];
+                results.forEach((r, i) => {
+                    if (r.status === 'rejected') console.error(`Dashboard fetch[${i}] failed:`, r.reason);
+                });
 
-                // Fetch latest review specifically for the focus card
-                const latestReview = await getLatestWeeklyReview();
-                setWeeklyFocus(latestReview ? latestReview.founderDecision : null);
-
-                setStats(statsData);
-                setAuditLogs(logsData);
-                setActivation(activationData);
-                setBroadActivity(broadActivityCount);
+                if (statsResult.status === 'fulfilled') setStats(statsResult.value);
+                if (logsResult.status === 'fulfilled') setAuditLogs(logsResult.value);
+                if (activationResult.status === 'fulfilled') setActivation(activationResult.value);
+                if (broadResult.status === 'fulfilled') setBroadActivity(broadResult.value);
+                setWeeklyFocus(reviewResult.status === 'fulfilled' && reviewResult.value ? reviewResult.value.founderDecision : null);
                 setLastUpdated(new Date().toLocaleTimeString());
             } catch (error) {
                 console.error("Dashboard fetch error:", error);
@@ -197,7 +195,7 @@ const Dashboard: React.FC = () => {
                 {/* Operational Counter */}
                 <StatCard
                     title="Activation Rate"
-                    value={`${activation?.activationRate.toFixed(1)}%`}
+                    value={`${activation?.activationRate?.toFixed(1) ?? '—'}%`}
                     icon={Zap}
                     color="bg-orange-500"
                     subtitle={`${activation?.activatedUsers} / ${activation?.totalUsers} users`}
@@ -234,10 +232,10 @@ const Dashboard: React.FC = () => {
                                 <div className="w-2 h-2 rounded-full bg-brand-500 mt-2 shrink-0 shadow-[0_0_8px_rgba(37,99,235,0.5)]" />
                                 <div>
                                     <p className="text-sm text-slate-200 leading-tight">
-                                        <span className="font-bold text-white">Admin</span> {log.action.replace(/_/g, ' ')}
+                                        <span className="font-bold text-white">Admin</span> {(log.action || '').replace(/_/g, ' ')}
                                     </p>
                                     <p className="text-xs text-slate-500 mt-1">
-                                        {log.timestamp?.toDate().toLocaleString() || 'Just now'}
+                                        {log.timestamp?.toDate?.()?.toLocaleString() || 'Just now'}
                                     </p>
                                 </div>
                             </div>

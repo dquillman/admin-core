@@ -188,6 +188,7 @@ export default function ExamEditor() {
         if (e.target.files && e.target.files[0]) {
             setImporting(true);
             fileReader.readAsText(e.target.files[0], "UTF-8");
+            fileReader.onerror = () => { setImporting(false); alert('Failed to read file.'); };
             fileReader.onload = async (event) => {
                 try {
                     if (event.target?.result && typeof event.target.result === 'string') {
@@ -268,7 +269,7 @@ export default function ExamEditor() {
 
         try {
             if (editingQuestion.id.startsWith('new_')) {
-                const { id, ...data } = editingQuestion;
+                const { id: _tempId, ...data } = editingQuestion; // eslint-disable-line @typescript-eslint/no-unused-vars
                 await addDoc(collection(db, 'questions'), {
                     ...data,
                     examId: examId,

@@ -6,7 +6,7 @@ import type { ReportedIssue, IssueCategory, ReleaseVersion } from '../types';
 import { useAuth } from '../hooks/useAuth';
 import { OperatorReviewPanel } from '../components/OperatorReviewPanel';
 import { IssueDetailModal } from '../components/IssueDetailModal';
-import { ISSUE_STATUS, ISSUE_STATUS_OPTIONS, ISSUE_PLATFORMS, getStatusColor as getStatusColorConstant, APP_OPTIONS, normalizeAppValue } from '../constants';
+import { ISSUE_STATUS, ISSUE_STATUS_OPTIONS, ISSUE_PLATFORMS, getStatusColor as getStatusColorConstant, APP_OPTIONS, normalizeAppValue, STALE_ISSUE_THRESHOLD_MS } from '../constants';
 
 import {
     AlertCircle,
@@ -33,7 +33,6 @@ const sanitizeUrl = (url: string | undefined): string | undefined => {
     return undefined; // reject non-http/https URLs entirely
 };
 
-const STALE_ISSUE_THRESHOLD_MS = 14 * 86400000; // 14 days
 
 
 // --- Issue State Drift Helpers ---
@@ -215,7 +214,7 @@ const Issues: React.FC = () => {
             .catch((err) => console.error('Failed to fetch users lookup:', err));
     }, [filterByUid]);
 
-    const formatDate = (val: any): string => {
+    const formatDate = (val: { toDate?: () => Date } | Date | string | number | null | undefined): string => {
         try {
             if (!val) return 'N/A';
             if (typeof val.toDate === 'function') return val.toDate().toLocaleDateString();
@@ -232,12 +231,12 @@ const Issues: React.FC = () => {
     // Memoized user lookup map (uid → email)
     const userMap = useMemo(() => new Map(users.map(u => [u.uid, u.email])), [users]);
 
-    const resolveAssignee = (userId: string | null | undefined): string => {
+    const resolveAssignee = React.useCallback((userId: string | null | undefined): string => {
         if (!userId) return 'Unassigned';
         if (userMap.has(userId)) return userMap.get(userId)!;
         if (userId.includes('@')) return userId;
         return `Unknown (${userId.slice(0, 8)}...)`;
-    };
+    }, [userMap]);
 
     // Derived State: Unique assignee display values from current issues
     const uniqueAssignees = useMemo(() => {
@@ -249,7 +248,7 @@ const Issues: React.FC = () => {
             if (b === 'Unassigned') return -1;
             return a.localeCompare(b);
         });
-    }, [issues, userMap]);
+    }, [issues, resolveAssignee]);
 
     // Derive unique environment and version values for telemetry filters
     const uniqueEnvironments = useMemo(() => {
@@ -455,7 +454,7 @@ const Issues: React.FC = () => {
             const dateB = getMillis(b);
             return sortOrder === 'newest' ? dateB - dateA : dateA - dateB;
         });
-    }, [issues, filterApp, filterType, filterStatuses, filterSeverity, filterClassification, filterAssignee, filterPlatform, filterPFV, filterRIV, filterEnvironment, filterVersion, searchUser, sortOrder, userMap]);
+    }, [issues, filterApp, filterType, filterStatuses, filterSeverity, filterClassification, filterAssignee, filterPlatform, filterPFV, filterRIV, filterEnvironment, filterVersion, searchUser, sortOrder, resolveAssignee]);
 
 
 
@@ -512,14 +511,13 @@ const Issues: React.FC = () => {
 
     const handleExport = () => {
         const now = Date.now();
-        const STALE_MS = STALE_ISSUE_THRESHOLD_MS;
         const exportData = issues.map(i => {
             const createdAt = i.createdAt?.toDate?.()?.toISOString() || i.timestamp?.toDate?.()?.toISOString() || null;
             const lastUpdated = i.updatedAt?.toDate?.()?.toISOString() || null;
             const createdMs = createdAt ? new Date(createdAt).getTime() : null;
             const updatedMs = lastUpdated ? new Date(lastUpdated).getTime() : null;
             const ageDays = createdMs != null ? Math.floor((now - createdMs) / 86400000) : null;
-            const isStale = updatedMs != null ? (now - updatedMs) > STALE_MS : false;
+            const isStale = updatedMs != null ? (now - updatedMs) > STALE_ISSUE_THRESHOLD_MS : false;
             return {
                 ...i,
                 id: i.id,
@@ -582,9 +580,7 @@ const Issues: React.FC = () => {
         }
     };
 
-    const getStatusColor = (status: string) => {
-        return getStatusColorConstant(status);
-    };
+    const getStatusColor = getStatusColorConstant;
 
     const getClassificationColor = (cls?: string) => {
         if (!cls || (cls as string) === 'unclassified') return 'bg-slate-800/50 text-slate-500 border-slate-700/50';

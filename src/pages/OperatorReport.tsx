@@ -14,6 +14,7 @@ const OperatorReport: React.FC = () => {
     const [selectedIssue, setSelectedIssue] = useState<ReportedIssue | null>(null);
 
     useEffect(() => {
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- async data fetch pattern
         setLoading(true);
         const unsubscribe = subscribeToReportedIssues(500, (data) => {
             setIssues(data);
@@ -30,16 +31,16 @@ const OperatorReport: React.FC = () => {
 
     const userMap = useMemo(() => new Map(users.map(u => [u.uid, u.email])), [users]);
 
-    const resolveAssignee = (userId: string | null | undefined): string => {
+    const resolveAssignee = React.useCallback((userId: string | null | undefined): string => {
         if (!userId) return 'Unassigned';
         if (userMap.has(userId)) return userMap.get(userId)!;
         if (userId.includes('@')) return userId;
         return `Unknown (${userId.slice(0, 8)}...)`;
-    };
+    }, [userMap]);
 
     const report = useMemo(
         () => buildOperatorReport(issues, resolveAssignee),
-        [issues, userMap]
+        [issues, resolveAssignee]
     );
 
     if (loading) {

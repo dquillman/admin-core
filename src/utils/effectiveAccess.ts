@@ -33,7 +33,7 @@ export const getEffectiveAccess = (user: User): AccessState => {
     // 2. Trial Logic
     // Support both 'trialActive' (legacy/standard) and 'trial' (new flow) flags
     // The new flow sets plan='pro' AND trial=true, so we must catch it here before the Paid check
-    const isTrial = user.trialActive === true || user.trial === true;
+    const isTrial = user.trialActive === true || user.trial?.active === true;
 
     if (isTrial && user.trialEndsAt) {
         if (user.trialEndsAt.toMillis() > now.toMillis()) {
