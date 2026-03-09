@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { searchUsers } from '../services/firestoreService';
+import { getAllUsers } from '../services/firestoreService';
 import { useAppSubscribers } from '../hooks/useAppSubscribers';
 import type { User } from '../types';
 import { UserX, Loader2 } from 'lucide-react';
@@ -25,7 +25,7 @@ const InactivePaidUsers: React.FC = () => {
 
     useEffect(() => {
         setLoading(true);
-        searchUsers('')
+        getAllUsers()
             .then(data => setAllUsers(filterByApp(data)))
             .catch((err) => console.error('Failed to fetch users:', err))
             .finally(() => setLoading(false));

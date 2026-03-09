@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { getTesterConversionData, searchUsers } from '../services/firestoreService';
+import { getTesterConversionData, getAllUsers } from '../services/firestoreService';
 import { useAppSubscribers } from '../hooks/useAppSubscribers';
 import type { AuditTimelineEntry } from '../services/firestoreService';
 import type { User } from '../types';
-import { TrendingUp, Loader2, Users, Clock, DollarSign } from 'lucide-react';
+import { TrendingUp, Loader2, Users, Clock, DollarSign, Calendar } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
@@ -41,6 +41,28 @@ const monthLabel = (key: string): string => {
     const d = new Date(Number(year), Number(month) - 1, 1);
     return d.toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
 };
+
+const toInputDate = (d: Date): string => {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+};
+
+const daysAgo = (n: number): Date => {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    d.setDate(d.getDate() - n);
+    return d;
+};
+
+const today = (): Date => {
+    const d = new Date();
+    d.setHours(23, 59, 59, 999);
+    return d;
+};
+
+type RangePreset = '30d' | '90d' | '6mo' | '1yr' | 'all';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -103,13 +125,31 @@ const TesterConversion: React.FC = () => {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
+    // Date range filter state
+    const [dateFrom, setDateFrom] = useState<string>(toInputDate(daysAgo(90)));
+    const [dateTo, setDateTo] = useState<string>(toInputDate(today()));
+    const [activePreset, setActivePreset] = useState<RangePreset>('90d');
+
+    const applyPreset = (preset: RangePreset) => {
+        setActivePreset(preset);
+        const end = today();
+        setDateTo(toInputDate(end));
+        switch (preset) {
+            case '30d':  setDateFrom(toInputDate(daysAgo(30))); break;
+            case '90d':  setDateFrom(toInputDate(daysAgo(90))); break;
+            case '6mo':  setDateFrom(toInputDate(daysAgo(182))); break;
+            case '1yr':  setDateFrom(toInputDate(daysAgo(365))); break;
+            case 'all':  setDateFrom(''); break;
+        }
+    };
+
     useEffect(() => {
         const load = async () => {
             setLoading(true);
             setError(null);
             try {
                 const [users, audit] = await Promise.all([
-                    searchUsers(''),
+                    getAllUsers(),
                     getTesterConversionData(),
                 ]);
                 setAllUsers(filterByApp(users));
@@ -149,19 +189,32 @@ const TesterConversion: React.FC = () => {
             });
     }, [testerEverUsers]);
 
+    // ── Derived: date-filtered converted users ────────────────────────────
+    const filteredConverted = useMemo<ConvertedUser[]>(() => {
+        const from = dateFrom ? new Date(dateFrom + 'T00:00:00') : null;
+        const to = dateTo ? new Date(dateTo + 'T23:59:59') : null;
+        return convertedUsers.filter(u => {
+            const d = toDate(u.verifiedPaidAt);
+            if (!d) return false;
+            if (from && d < from) return false;
+            if (to && d > to) return false;
+            return true;
+        });
+    }, [convertedUsers, dateFrom, dateTo]);
+
     // ── Derived: stat values ───────────────────────────────────────────────
     const totalTesters = testerEverUsers.length;
-    const totalConverted = convertedUsers.length;
+    const totalConverted = filteredConverted.length;
     const conversionRate = totalTesters > 0
         ? ((totalConverted / totalTesters) * 100).toFixed(1)
         : '0.0';
 
     const avgDaysToConvert = useMemo(() => {
-        const valid = convertedUsers.filter(u => u.daysToConvert !== null) as (ConvertedUser & { daysToConvert: number })[];
+        const valid = filteredConverted.filter(u => u.daysToConvert !== null) as (ConvertedUser & { daysToConvert: number })[];
         if (!valid.length) return null;
         const avg = valid.reduce((sum, u) => sum + u.daysToConvert, 0) / valid.length;
         return Math.round(avg);
-    }, [convertedUsers]);
+    }, [filteredConverted]);
 
     // ── Derived: chart data ────────────────────────────────────────────────
     // Build a uid→user lookup for testerGrantedAt check
@@ -173,6 +226,9 @@ const TesterConversion: React.FC = () => {
 
     const chartData = useMemo<MonthDataPoint[]>(() => {
         // Only audit entries that are SET_BILLING_STATUS to 'paid' for a user who has testerGrantedAt
+        const from = dateFrom ? new Date(dateFrom + 'T00:00:00') : null;
+        const to = dateTo ? new Date(dateTo + 'T23:59:59') : null;
+
         const conversionEvents = auditEntries.filter(e => {
             if (e.action !== 'SET_BILLING_STATUS') return false;
             const newStatus = e.metadata?.newStatus ?? e.metadata?.new?.billingStatus;
@@ -180,7 +236,13 @@ const TesterConversion: React.FC = () => {
             const uid = e.targetUserId;
             if (!uid) return false;
             const user = uidToUser.get(uid);
-            return !!user?.testerGrantedAt;
+            if (!user?.testerGrantedAt) return false;
+            // Apply date range filter
+            const d = toDate(e.createdAt);
+            if (!d) return false;
+            if (from && d < from) return false;
+            if (to && d > to) return false;
+            return true;
         });
 
         if (!conversionEvents.length) return [];
@@ -200,7 +262,7 @@ const TesterConversion: React.FC = () => {
                 label: monthLabel(key),
                 conversions: counts[key],
             }));
-    }, [auditEntries, uidToUser]);
+    }, [auditEntries, uidToUser, dateFrom, dateTo]);
 
     // ── Render ─────────────────────────────────────────────────────────────
 
@@ -228,6 +290,52 @@ const TesterConversion: React.FC = () => {
             <div>
                 <h1 className="text-4xl font-bold text-white tracking-tight mb-1">Tester Conversion</h1>
                 <p className="text-slate-400">Tester-to-paid conversion tracking</p>
+            </div>
+
+            {/* Date Range Filter */}
+            <div className="bg-slate-900 border border-slate-800 rounded-2xl px-6 py-4 flex flex-wrap items-center gap-4">
+                <div className="flex items-center gap-2 text-slate-400">
+                    <Calendar className="w-4 h-4" />
+                    <span className="text-xs font-semibold uppercase tracking-widest">Range</span>
+                </div>
+
+                <div className="flex items-center gap-2">
+                    <input
+                        type="date"
+                        value={dateFrom}
+                        onChange={e => { setDateFrom(e.target.value); setActivePreset(undefined as any); }}
+                        className="bg-slate-800 border border-slate-700 rounded-lg px-3 py-1.5 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500/40 focus:border-emerald-500/60 [color-scheme:dark]"
+                    />
+                    <span className="text-slate-600 text-xs">to</span>
+                    <input
+                        type="date"
+                        value={dateTo}
+                        onChange={e => { setDateTo(e.target.value); setActivePreset(undefined as any); }}
+                        className="bg-slate-800 border border-slate-700 rounded-lg px-3 py-1.5 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500/40 focus:border-emerald-500/60 [color-scheme:dark]"
+                    />
+                </div>
+
+                <div className="flex items-center gap-1.5 ml-auto">
+                    {([
+                        ['30d', '30d'],
+                        ['90d', '90d'],
+                        ['6mo', '6mo'],
+                        ['1yr', '1yr'],
+                        ['all', 'All Time'],
+                    ] as [RangePreset, string][]).map(([key, label]) => (
+                        <button
+                            key={key}
+                            onClick={() => applyPreset(key)}
+                            className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
+                                activePreset === key
+                                    ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                                    : 'bg-slate-800 text-slate-400 border border-slate-700 hover:bg-slate-700 hover:text-slate-300'
+                            }`}
+                        >
+                            {label}
+                        </button>
+                    ))}
+                </div>
             </div>
 
             {/* Stat Cards */}
@@ -312,11 +420,11 @@ const TesterConversion: React.FC = () => {
                         Converted Users
                     </h2>
                     <span className="text-xs font-semibold text-slate-500 bg-slate-800 px-3 py-1 rounded-full">
-                        {convertedUsers.length}
+                        {filteredConverted.length}
                     </span>
                 </div>
 
-                {convertedUsers.length === 0 ? (
+                {filteredConverted.length === 0 ? (
                     <div className="flex flex-col items-center justify-center py-16 text-slate-600 gap-2">
                         <DollarSign className="w-8 h-8" />
                         <p className="text-sm">No tester-to-paid conversions recorded yet.</p>
@@ -344,7 +452,7 @@ const TesterConversion: React.FC = () => {
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-800/60">
-                                {convertedUsers.map(u => (
+                                {filteredConverted.map(u => (
                                     <tr
                                         key={u.uid}
                                         className="hover:bg-slate-800/40 transition-colors"

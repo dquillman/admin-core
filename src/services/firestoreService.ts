@@ -154,6 +154,18 @@ export const searchUsers = async (searchTerm: string): Promise<User[]> => {
     });
 };
 
+/** Fetch all users without search filtering or low limit. Use for dashboard/analytics pages. */
+export const getAllUsers = async (): Promise<User[]> => {
+    const usersCol = collection(db, 'users');
+    const q = query(usersCol, limit(1000));
+    const snap = await safeGetDocs(q, { fallback: [], context: 'Users', description: 'Get All Users' });
+    return snap.docs.map(doc => {
+        const user = { ...doc.data(), uid: doc.id } as User;
+        assertUidInvariant(user, doc.id);
+        return user;
+    });
+};
+
 export const getTesterUsers = async (activeOnly: boolean = false): Promise<User[]> => {
     const usersCol = collection(db, 'users');
     let q = query(usersCol, where('testerOverride', '==', true));

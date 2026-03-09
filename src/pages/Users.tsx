@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import {
     searchUsers,
@@ -63,10 +64,11 @@ function cn(...inputs: ClassValue[]) {
 }
 
 const UsersPage: React.FC = () => {
+    const [searchParams] = useSearchParams();
     // State
     const [users, setUsers] = useState<User[]>([]);
     const [stats, setStats] = useState<TesterStats>({ grantedTesters: 0, revokedTesters: 0, disabledUsers: 0 });
-    const [searchTerm, setSearchTerm] = useState('');
+    const [searchTerm, setSearchTerm] = useState(searchParams.get('search') || '');
     const [showTestersOnly, setShowTestersOnly] = useState(false);
     const [showArchived, setShowArchived] = useState(false);
     const [archivedCount, setArchivedCount] = useState(0);

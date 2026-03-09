@@ -1,8 +1,8 @@
 import { useState, useEffect, useMemo } from 'react';
-import { getTesterUsers, searchUsers } from '../services/firestoreService';
+import { getTesterUsers, getAllUsers } from '../services/firestoreService';
 import { useAppSubscribers } from '../hooks/useAppSubscribers';
 import type { User } from '../types';
-import { TrendingDown, Loader2 } from 'lucide-react';
+import { TrendingDown, Loader2, CalendarDays } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 
 interface FunnelStage {
@@ -39,12 +39,25 @@ const CustomTooltip = ({ active, payload }: any) => {
     return null;
 };
 
+function toISODate(d: Date): string {
+    return d.toISOString().slice(0, 10);
+}
+
+function daysAgo(n: number): Date {
+    const d = new Date();
+    d.setDate(d.getDate() - n);
+    return d;
+}
+
 export default function TesterFunnel() {
     const { filterByApp } = useAppSubscribers();
     const [testerUsers, setTesterUsers] = useState<User[]>([]);
     const [allUsers, setAllUsers] = useState<User[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    const [dateFrom, setDateFrom] = useState<string>(toISODate(daysAgo(90)));
+    const [dateTo, setDateTo] = useState<string>(toISODate(new Date()));
+    const [allTime, setAllTime] = useState(false);
 
     useEffect(() => {
         const fetchData = async () => {
@@ -53,7 +66,7 @@ export default function TesterFunnel() {
             try {
                 const [testers, users] = await Promise.all([
                     getTesterUsers(),
-                    searchUsers(''),
+                    getAllUsers(),
                 ]);
                 setTesterUsers(filterByApp(testers));
                 setAllUsers(filterByApp(users));
@@ -66,13 +79,37 @@ export default function TesterFunnel() {
         fetchData();
     }, [filterByApp]);
 
+    const filteredTesters = useMemo(() => {
+        if (allTime) return testerUsers;
+        const from = dateFrom ? new Date(dateFrom + 'T00:00:00') : null;
+        const to = dateTo ? new Date(dateTo + 'T23:59:59') : null;
+        return testerUsers.filter(u => {
+            if (!u.testerGrantedAt) return false;
+            const granted = u.testerGrantedAt.toDate();
+            if (from && granted < from) return false;
+            if (to && granted > to) return false;
+            return true;
+        });
+    }, [testerUsers, dateFrom, dateTo, allTime]);
+
+    const filteredConverted = useMemo(() => {
+        if (allTime) return allUsers.filter(u => u.billingStatus === 'paid' && u.testerGrantedAt != null);
+        const from = dateFrom ? new Date(dateFrom + 'T00:00:00') : null;
+        const to = dateTo ? new Date(dateTo + 'T23:59:59') : null;
+        return allUsers.filter(u => {
+            if (u.billingStatus !== 'paid' || !u.testerGrantedAt) return false;
+            const granted = u.testerGrantedAt.toDate();
+            if (from && granted < from) return false;
+            if (to && granted > to) return false;
+            return true;
+        });
+    }, [allUsers, dateFrom, dateTo, allTime]);
+
     const stages = useMemo<FunnelStage[]>(() => {
-        const invited = testerUsers.length;
-        const activated = testerUsers.filter(u => (u.usageScore ?? 0) > 0).length;
-        const engaged = testerUsers.filter(u => (u.usageScore ?? 0) >= 30).length;
-        const converted = allUsers.filter(
-            u => u.billingStatus === 'paid' && u.testerGrantedAt != null
-        ).length;
+        const invited = filteredTesters.length;
+        const activated = filteredTesters.filter(u => (u.usageScore ?? 0) > 0).length;
+        const engaged = filteredTesters.filter(u => (u.usageScore ?? 0) >= 30).length;
+        const converted = filteredConverted.length;
 
         return [
             { name: 'Invited', count: invited, color: STAGE_COLORS.Invited },
@@ -80,7 +117,7 @@ export default function TesterFunnel() {
             { name: 'Engaged', count: engaged, color: STAGE_COLORS.Engaged },
             { name: 'Converted', count: converted, color: STAGE_COLORS.Converted },
         ];
-    }, [testerUsers, allUsers]);
+    }, [filteredTesters, filteredConverted]);
 
     const stageRows = useMemo<StageRow[]>(() => {
         const total = stages[0]?.count ?? 0;
@@ -100,7 +137,7 @@ export default function TesterFunnel() {
         });
     }, [stages]);
 
-    const isEmpty = !loading && testerUsers.length === 0;
+    const isEmpty = !loading && filteredTesters.length === 0;
 
     return (
         <div className="min-h-screen bg-slate-950 p-6">
@@ -111,6 +148,40 @@ export default function TesterFunnel() {
                     <h1 className="text-2xl font-bold text-white">Tester Funnel</h1>
                 </div>
                 <p className="text-slate-400 text-sm ml-9">Tester lifecycle stages</p>
+            </div>
+
+            {/* Date range filter */}
+            <div className="mb-6 flex flex-wrap items-center gap-3">
+                <CalendarDays className="text-slate-400" size={16} />
+                <label className="text-xs text-slate-400">From</label>
+                <input
+                    type="date"
+                    value={allTime ? '' : dateFrom}
+                    onChange={e => { setDateFrom(e.target.value); setAllTime(false); }}
+                    className="bg-slate-800 border border-slate-700 text-slate-200 text-sm rounded-lg px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-purple-500 [color-scheme:dark]"
+                />
+                <label className="text-xs text-slate-400">To</label>
+                <input
+                    type="date"
+                    value={allTime ? '' : dateTo}
+                    onChange={e => { setDateTo(e.target.value); setAllTime(false); }}
+                    className="bg-slate-800 border border-slate-700 text-slate-200 text-sm rounded-lg px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-purple-500 [color-scheme:dark]"
+                />
+                <button
+                    onClick={() => setAllTime(true)}
+                    className={`text-xs px-3 py-1.5 rounded-lg border transition-colors ${
+                        allTime
+                            ? 'bg-purple-600 border-purple-500 text-white'
+                            : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-slate-200 hover:border-slate-600'
+                    }`}
+                >
+                    All Time
+                </button>
+                {!allTime && (
+                    <span className="text-xs text-slate-500 ml-1">
+                        Showing testers granted {dateFrom} to {dateTo}
+                    </span>
+                )}
             </div>
 
             {/* Loading state */}
