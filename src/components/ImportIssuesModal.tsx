@@ -134,8 +134,8 @@ export const ImportIssuesModal: React.FC<ImportIssuesModalProps> = ({ isOpen, on
             const count = await batchImportIssues(toImport);
             setImportResult({ success: true, count });
             setStep('done');
-        } catch (err: any) {
-            setImportResult({ success: false, count: 0, error: err.message || 'Import failed.' });
+        } catch (err: unknown) {
+            setImportResult({ success: false, count: 0, error: err instanceof Error ? err.message : 'Import failed.' });
             setStep('done');
         }
     };

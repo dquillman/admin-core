@@ -9,34 +9,60 @@ interface AppContextType {
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
-const DEFAULT_APP_ID = 'examcoachpro';
+const DEFAULT_APP_ID = 'exam-coach';
 const STORAGE_KEY_APP_ID = 'admin_core_app_id';
 const STORAGE_KEY_AVAILABLE_APPS = 'admin_core_available_apps';
+
+// Migration: map legacy AppContext IDs to canonical APP_REGISTRY keys
+const LEGACY_APP_MAP: Record<string, string> = {
+    'examcoachpro': 'exam-coach',
+    'migraine tracker': 'migraine-tracker',
+};
+const migrateAppId = (id: string): string => LEGACY_APP_MAP[id] || id;
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     const [appId, setAppIdState] = useState<string>(() => {
         // 1. Check URL query
         const urlParams = new URLSearchParams(window.location.search);
         const queryAppId = urlParams.get('appId');
-        if (queryAppId) return queryAppId;
+        if (queryAppId) {
+            const migrated = migrateAppId(queryAppId);
+            if (migrated !== queryAppId) localStorage.setItem(STORAGE_KEY_APP_ID, migrated);
+            return migrated;
+        }
 
-        // 2. Check localStorage
+        // 2. Check localStorage (migrate legacy IDs)
         const storedAppId = localStorage.getItem(STORAGE_KEY_APP_ID);
-        if (storedAppId) return storedAppId;
+        if (storedAppId) {
+            const migrated = migrateAppId(storedAppId);
+            if (migrated !== storedAppId) localStorage.setItem(STORAGE_KEY_APP_ID, migrated);
+            return migrated;
+        }
 
         return DEFAULT_APP_ID;
     });
 
     const [availableApps, setAvailableApps] = useState<string[]>(() => {
+        const defaults = ["exam-coach", "admin-core", "onboard-kit", "migraine-tracker", "deadline-shield", "machine-tracker", "game-forge"];
         const storedApps = localStorage.getItem(STORAGE_KEY_AVAILABLE_APPS);
         if (storedApps) {
             try {
-                return JSON.parse(storedApps);
+                const parsed: string[] = JSON.parse(storedApps);
+                const migrated = parsed.map(migrateAppId);
+                // If the stored list has legacy IDs, replace with defaults + any custom additions
+                const hasLegacy = parsed.some(id => id in LEGACY_APP_MAP);
+                if (hasLegacy) {
+                    const custom = migrated.filter(id => !defaults.includes(id));
+                    const merged = [...defaults, ...custom];
+                    localStorage.setItem(STORAGE_KEY_AVAILABLE_APPS, JSON.stringify(merged));
+                    return merged;
+                }
+                return migrated;
             } catch (e) {
                 console.error("Failed to parse available apps", e);
             }
         }
-        return ["examcoachpro", "deadline-shield", "machine-tracker"];
+        return defaults;
     });
 
     const setAppId = (id: string) => {

@@ -54,6 +54,7 @@ const Dashboard: React.FC = () => {
     const [broadActivity, setBroadActivity] = useState<number>(0);
     const [weeklyFocus, setWeeklyFocus] = useState<string | null>(null);
     const [loading, setLoading] = useState(true);
+    const [lastUpdated, setLastUpdated] = useState<string>('');
     const [isMounted, setIsMounted] = useState(false);
 
     useEffect(() => {
@@ -81,6 +82,7 @@ const Dashboard: React.FC = () => {
                 setAuditLogs(logsData);
                 setActivation(activationData);
                 setBroadActivity(broadActivityCount);
+                setLastUpdated(new Date().toLocaleTimeString());
             } catch (error) {
                 console.error("Dashboard fetch error:", error);
             } finally {
@@ -138,7 +140,7 @@ const Dashboard: React.FC = () => {
                 </div>
                 <div className="bg-slate-900 border border-slate-800 rounded-2xl px-4 py-2 text-sm text-slate-400 flex items-center gap-2">
                     <Clock className="w-4 h-4" />
-                    Last updated: {new Date().toLocaleTimeString()}
+                    Last updated: {lastUpdated || '...'}
                 </div>
             </div>
 

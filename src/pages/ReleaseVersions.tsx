@@ -1,16 +1,21 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../hooks/useAuth';
+import { useApp } from '../context/AppContext';
 import {
     Tag,
     Plus,
     AlertTriangle,
-    Loader2
+    Loader2,
+    Trash2
 } from 'lucide-react';
 import {
-    subscribeToReleaseVersions,
     addReleaseVersion,
-    updateReleaseVersionStatus
+    updateReleaseVersionStatus,
+    deleteReleaseVersion
 } from '../services/firestoreService';
+import { collection, query, orderBy, onSnapshot } from 'firebase/firestore';
+import { db } from '../firebase';
+import { normalizeAppValue } from '../constants';
 import type { ReleaseVersion, ReleaseVersionStatus } from '../types';
 
 const VERSION_REGEX = /^\d+\.\d{1,2}\.\d+$/;
@@ -23,6 +28,7 @@ const STATUS_COLORS: Record<ReleaseVersionStatus, string> = {
 
 const ReleaseVersionsPage: React.FC = () => {
     const { isAdmin, loading: authLoading } = useAuth();
+    const { appId } = useApp();
     const [versions, setVersions] = useState<ReleaseVersion[]>([]);
     const [loading, setLoading] = useState(true);
 
@@ -33,12 +39,24 @@ const ReleaseVersionsPage: React.FC = () => {
     const [success, setSuccess] = useState<string | null>(null);
 
     useEffect(() => {
-        const unsubscribe = subscribeToReleaseVersions((data) => {
-            setVersions(data);
+        if (!isAdmin) {
+            setLoading(false);
+            return;
+        }
+        setLoading(true);
+        const col = collection(db, 'release_versions');
+        const unsubscribe = onSnapshot(query(col, orderBy('version', 'desc')), (snapshot) => {
+            let vers = snapshot.docs.map(d => ({ id: d.id, ...d.data() } as ReleaseVersion));
+            if (appId) vers = vers.filter(v => normalizeAppValue(v.appId || 'exam-coach') === normalizeAppValue(appId));
+            setVersions(vers);
+            setLoading(false);
+        }, (err) => {
+            console.error("ReleaseVersions subscription failed:", err);
+            setError(`Subscription failed: ${err.message}`);
             setLoading(false);
         });
         return () => unsubscribe();
-    }, []);
+    }, [isAdmin, appId]);
 
     const handleAddVersion = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -57,11 +75,11 @@ const ReleaseVersionsPage: React.FC = () => {
 
         setIsSubmitting(true);
         try {
-            await addReleaseVersion(trimmed);
+            await addReleaseVersion(trimmed, appId);
             setNewVersion('');
             setSuccess(`Version ${trimmed} added`);
-        } catch (err: any) {
-            setError(err.message || 'Failed to add version');
+        } catch (err: unknown) {
+            setError(err instanceof Error ? err.message : 'Failed to add version');
         } finally {
             setIsSubmitting(false);
         }
@@ -70,8 +88,18 @@ const ReleaseVersionsPage: React.FC = () => {
     const handleStatusChange = async (versionId: string, status: ReleaseVersionStatus) => {
         try {
             await updateReleaseVersionStatus(versionId, status);
-        } catch (err: any) {
-            setError(err.message || 'Failed to update status');
+        } catch (err: unknown) {
+            setError(err instanceof Error ? err.message : 'Failed to update status');
+        }
+    };
+
+    const handleDelete = async (v: ReleaseVersion) => {
+        if (!confirm(`Delete version ${v.version}? This cannot be undone.`)) return;
+        try {
+            await deleteReleaseVersion(v.id);
+            setSuccess(`Version ${v.version} deleted`);
+        } catch (err: unknown) {
+            setError(err instanceof Error ? err.message : 'Failed to delete version');
         }
     };
 
@@ -97,7 +125,9 @@ const ReleaseVersionsPage: React.FC = () => {
             {/* Header */}
             <div>
                 <h1 className="text-4xl font-bold text-white tracking-tight mb-2">Release Versions</h1>
-                <p className="text-slate-400">Manage release versions used for issue planning (PFV).</p>
+                <p className="text-slate-400">
+                    Manage release versions for <span className="text-white font-semibold">{appId}</span> used for issue planning (PFV).
+                </p>
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
@@ -137,21 +167,30 @@ const ReleaseVersionsPage: React.FC = () => {
                                             {v.createdAt?.toDate?.().toLocaleDateString() || '—'}
                                         </td>
                                         <td className="px-6 py-4">
-                                            <select
-                                                value={v.status}
-                                                onChange={(e) => handleStatusChange(v.id, e.target.value as ReleaseVersionStatus)}
-                                                className="bg-slate-800 border border-slate-700 text-slate-200 text-sm rounded-lg p-1.5 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 transition-colors"
-                                            >
-                                                <option value="planned">Planned</option>
-                                                <option value="in-progress">In Progress</option>
-                                                <option value="released">Released</option>
-                                            </select>
+                                            <div className="flex items-center gap-2">
+                                                <select
+                                                    value={v.status}
+                                                    onChange={(e) => handleStatusChange(v.id, e.target.value as ReleaseVersionStatus)}
+                                                    className="bg-slate-800 border border-slate-700 text-slate-200 text-sm rounded-lg p-1.5 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 transition-colors"
+                                                >
+                                                    <option value="planned">Planned</option>
+                                                    <option value="in-progress">In Progress</option>
+                                                    <option value="released">Released</option>
+                                                </select>
+                                                <button
+                                                    onClick={() => handleDelete(v)}
+                                                    className="p-1.5 rounded-lg text-slate-500 hover:text-red-400 hover:bg-red-500/10 transition-colors"
+                                                    title="Delete version"
+                                                >
+                                                    <Trash2 className="w-4 h-4" />
+                                                </button>
+                                            </div>
                                         </td>
                                     </tr>
                                 )) : (
                                     <tr>
                                         <td colSpan={4} className="px-6 py-12 text-center text-slate-500 italic">
-                                            No versions yet. Add one to get started.
+                                            No versions for {appId}. Add one to get started.
                                         </td>
                                     </tr>
                                 )}

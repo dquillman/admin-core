@@ -27,13 +27,29 @@ export const APP_REGISTRY = {
     'onboard-kit': {
         label: 'OnboardKit',
         prefix: 'OK'
+    },
+    'migraine-tracker': {
+        label: 'Migraine Tracker',
+        prefix: 'MT'
+    },
+    'game-forge': {
+        label: 'GameForge',
+        prefix: 'GF'
+    },
+    'deadline-shield': {
+        label: 'Deadline Shield',
+        prefix: 'DS'
+    },
+    'machine-tracker': {
+        label: 'Machine Tracker',
+        prefix: 'MCT'
     }
 } as const;
 
 export type AppKey = keyof typeof APP_REGISTRY;
 
 // Explicit ordering of app keys (Object.keys doesn't guarantee order)
-export const APP_KEYS: AppKey[] = ['admin-core', 'exam-coach', 'onboard-kit'];
+export const APP_KEYS: AppKey[] = ['admin-core', 'exam-coach', 'onboard-kit', 'migraine-tracker', 'game-forge', 'deadline-shield', 'machine-tracker'];
 
 // Helper to get app options for dropdowns (explicit order)
 export const APP_OPTIONS = APP_KEYS.map(key => ({
@@ -58,6 +74,10 @@ export const normalizeAppValue = (value: string | undefined | null): AppKey => {
     if (lower === 'admincore' || lower === 'admin-core') return 'admin-core';
     if (lower === 'examcoach' || lower === 'exam-coach') return 'exam-coach';
     if (lower === 'onboardkit' || lower === 'onboard-kit') return 'onboard-kit';
+    if (lower === 'migrainetracker' || lower === 'migraine-tracker') return 'migraine-tracker';
+    if (lower === 'gameforge' || lower === 'game-forge') return 'game-forge';
+    if (lower === 'deadlineshield' || lower === 'deadline-shield') return 'deadline-shield';
+    if (lower === 'machinetracker' || lower === 'machine-tracker') return 'machine-tracker';
     return 'exam-coach'; // Default fallback
 };
 

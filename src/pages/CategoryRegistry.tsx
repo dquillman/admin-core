@@ -105,9 +105,9 @@ const CategoryRegistry: React.FC = () => {
             if (results.length === 0) {
                 alert("No confident suggestions found for the current uncategorized issues.");
             }
-        } catch (err: any) {
+        } catch (err: unknown) {
             console.error(err);
-            alert(`Error running suggestions: ${err.message}`);
+            alert(`Error running suggestions: ${err instanceof Error ? err.message : 'Unknown error'}`);
         } finally {
             setLoading(false);
         }
@@ -134,8 +134,8 @@ const CategoryRegistry: React.FC = () => {
             setSelectedIssueIds(new Set()); // Reset selection
 
             alert("Issues updated successfully.");
-        } catch (err: any) {
-            alert(`Error applying updates: ${err.message}`);
+        } catch (err: unknown) {
+            alert(`Error applying updates: ${err instanceof Error ? err.message : 'Unknown error'}`);
         } finally {
             setIsSubmitting(false);
         }
@@ -167,8 +167,8 @@ const CategoryRegistry: React.FC = () => {
             setNewId('');
             setNewLabel('');
             setNewDesc('');
-        } catch (err: any) {
-            setError(err.message);
+        } catch (err: unknown) {
+            setError(err instanceof Error ? err.message : 'Unknown error');
         } finally {
             setIsSubmitting(false);
         }
@@ -180,8 +180,8 @@ const CategoryRegistry: React.FC = () => {
             await updateIssueCategory(id, {
                 status: currentStatus === 'active' ? 'deprecated' : 'active'
             });
-        } catch (err: any) {
-            alert(err.message);
+        } catch (err: unknown) {
+            alert(err instanceof Error ? err.message : 'Unknown error');
         }
     };
 
@@ -226,8 +226,8 @@ const CategoryRegistry: React.FC = () => {
                                         const { seedDefaultCategories } = await import('../services/firestoreService');
                                         const count = await seedDefaultCategories();
                                         alert(`Seeding complete. Added ${count} new categories.`);
-                                    } catch (err: any) {
-                                        alert(`Error seeding: ${err.message}`);
+                                    } catch (err: unknown) {
+                                        alert(`Error seeding: ${err instanceof Error ? err.message : 'Unknown error'}`);
                                     } finally {
                                         setLoading(false);
                                     }

@@ -1,9 +1,15 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { X, ExternalLink, Loader2, Save, Trash2, ShieldCheck, Lightbulb } from 'lucide-react';
 import type { ReportedIssue, IssueCategory, ReleaseVersion } from '../types';
 import { ISSUE_STATUS, ISSUE_STATUS_OPTIONS, ISSUE_PLATFORMS, normalizeAppValue } from '../constants';
 import { updateIssueStatus, updateIssueDetails, addIssueNote, deleteIssue, subscribeToIssueCategories, subscribeToReleaseVersions, updateIssuePFV, updateIssueRIV, fetchAllUsersLookup } from '../services/firestoreService';
 import { useAuth } from '../hooks/useAuth';
+
+const sanitizeUrl = (url: string | undefined): string | undefined => {
+    if (!url) return undefined;
+    if (url.startsWith('http://') || url.startsWith('https://')) return url;
+    return undefined; // reject non-http/https URLs entirely
+};
 
 interface IssueDetailModalProps {
     issue: ReportedIssue | null;
@@ -15,8 +21,17 @@ export const IssueDetailModal: React.FC<IssueDetailModalProps> = ({ issue, onClo
     const { isAdmin, isSuperAdmin } = useAuth();
     // Debug log to confirm admin status for UI visibility
     // console.log('[IssueDetailModal] isAdmin:', isAdmin);
+    const modalRef = useRef<HTMLDivElement>(null);
     const [noteText, setNoteText] = useState('');
     const [submittingNote, setSubmittingNote] = useState(false);
+    const [validationError, setValidationError] = useState<string | null>(null);
+
+    // Auto-clear validation error after 5 seconds
+    useEffect(() => {
+        if (!validationError) return;
+        const timer = setTimeout(() => setValidationError(null), 5000);
+        return () => clearTimeout(timer);
+    }, [validationError]);
 
     // Registry State
     const [categories, setCategories] = useState<IssueCategory[]>([]);
@@ -53,6 +68,20 @@ export const IssueDetailModal: React.FC<IssueDetailModalProps> = ({ issue, onClo
             .finally(() => setLoadingUsers(false));
     }, []);
 
+    // Focus modal on open
+    useEffect(() => {
+        if (issue) {
+            modalRef.current?.focus();
+        }
+    }, [issue]);
+
+    // Close on Escape key
+    const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
+        if (e.key === 'Escape') {
+            onClose();
+        }
+    }, [onClose]);
+
     if (!issue || !localIssue) return null;
 
     const userMap = new Map(users.map(u => [u.uid, u.email]));
@@ -77,7 +106,9 @@ export const IssueDetailModal: React.FC<IssueDetailModalProps> = ({ issue, onClo
             updates.status !== ISSUE_STATUS.RELEASED &&
             localIssue?.releasedInVersion
         ) {
-            alert('Cannot change status away from "released" while releasedInVersion is set. Clear RIV first (super-admin required).');
+            const msg = 'Cannot change status away from "released" while releasedInVersion is set. Clear RIV first (super-admin required).';
+            console.error(msg);
+            setValidationError(msg);
             return;
         }
 
@@ -87,9 +118,14 @@ export const IssueDetailModal: React.FC<IssueDetailModalProps> = ({ issue, onClo
             TERMINAL_STATUSES.includes(updates.status as any) &&
             !localIssue?.plannedForVersion
         ) {
-            alert('Planned for Version (PFV) must be set before marking an issue as resolved, released, or closed.');
+            const msg = 'Planned for Version (PFV) must be set before marking an issue as resolved, released, or closed.';
+            console.error(msg);
+            setValidationError(msg);
             return;
         }
+
+        // Capture current state before optimistic update for safe revert
+        const prevState = localIssue;
 
         // Optimistic update
         setLocalIssue(prev => prev ? ({ ...prev, ...updates }) : null);
@@ -112,8 +148,8 @@ export const IssueDetailModal: React.FC<IssueDetailModalProps> = ({ issue, onClo
             onUpdate();
         } catch (error) {
             console.error("Failed to update issue:", error);
-            // Revert on failure (could improve this)
-            setLocalIssue(issue);
+            // Revert to previous local state, not the issue prop
+            setLocalIssue(prevState);
         }
     };
 
@@ -139,14 +175,14 @@ export const IssueDetailModal: React.FC<IssueDetailModalProps> = ({ issue, onClo
                 onClose();
             } catch (error) {
                 console.error("Failed to delete issue:", error);
-                alert("Failed to delete issue");
+                setValidationError('Failed to delete issue. Please try again.');
             }
         }
     };
 
     return (
         <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm" onClick={onClose}>
-            <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-3xl max-h-[90vh] flex flex-col shadow-2xl" onClick={e => e.stopPropagation()}>
+            <div ref={modalRef} tabIndex={-1} onKeyDown={handleKeyDown} className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-3xl max-h-[90vh] flex flex-col shadow-2xl outline-none" onClick={e => e.stopPropagation()}>
 
                 {/* Header: ID & Close */}
                 <div className="p-6 border-b border-slate-800 flex justify-between items-start bg-slate-900/50">
@@ -169,6 +205,19 @@ export const IssueDetailModal: React.FC<IssueDetailModalProps> = ({ issue, onClo
                 </div>
 
                 <div className="flex-1 overflow-y-auto p-6 space-y-8">
+
+                    {/* Validation Error Banner */}
+                    {validationError && (
+                        <div className="flex items-center justify-between gap-3 px-4 py-3 bg-red-500/15 border border-red-500/30 rounded-lg text-red-400 text-sm">
+                            <span>{validationError}</span>
+                            <button
+                                onClick={() => setValidationError(null)}
+                                className="shrink-0 text-red-400 hover:text-red-300 transition-colors"
+                            >
+                                <X className="w-4 h-4" />
+                            </button>
+                        </div>
+                    )}
 
                     {/* 1. Critical Control Panel (Type, Sev, Status, Class) */}
                     <section className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-slate-950/50 p-5 rounded-xl border border-slate-800/50">
@@ -211,7 +260,9 @@ export const IssueDetailModal: React.FC<IssueDetailModalProps> = ({ issue, onClo
                                                 handleUpdate({ type: result.categoryId as any });
                                             }
                                         } else {
-                                            alert("AI could not confidently recommend a category based on the available text.");
+                                            const msg = 'AI could not confidently recommend a category based on the available text.';
+                                            console.error(msg);
+                                            setValidationError(msg);
                                         }
                                     }}
                                     className="shrink-0 bg-brand-600 hover:bg-brand-500 text-white border border-brand-500 px-3 rounded-lg transition-colors flex items-center justify-center min-w-[40px] shadow-lg shadow-brand-500/20"
@@ -311,12 +362,13 @@ export const IssueDetailModal: React.FC<IssueDetailModalProps> = ({ issue, onClo
                                 onChange={(e) => {
                                     const newPFV = e.target.value || null;
                                     const prevPFV = localIssue.plannedForVersion || null;
+                                    const prevState = localIssue;
                                     setLocalIssue(prev => prev ? ({ ...prev, plannedForVersion: newPFV }) : null);
                                     updateIssuePFV(issue.id, prevPFV, newPFV).then(() => {
                                         onUpdate();
                                     }).catch((err) => {
                                         console.error("Failed to update PFV:", err);
-                                        setLocalIssue(issue);
+                                        setLocalIssue(prevState);
                                     });
                                 }}
                                 disabled={!isAdmin}
@@ -357,22 +409,27 @@ export const IssueDetailModal: React.FC<IssueDetailModalProps> = ({ issue, onClo
 
                                     // Rule: RIV can only be set when status is 'released'
                                     if (newRIV && localIssue.status !== ISSUE_STATUS.RELEASED) {
-                                        alert('releasedInVersion can only be set when status is "released".');
+                                        const msg = 'releasedInVersion can only be set when status is "released".';
+                                        console.error(msg);
+                                        setValidationError(msg);
                                         return;
                                     }
 
                                     // Rule: RIV cannot be changed if already set, unless super-admin
                                     if (prevRIV && !isSuperAdmin) {
-                                        alert('releasedInVersion is read-only once set. Super-admin access required to modify.');
+                                        const msg = 'releasedInVersion is read-only once set. Super-admin access required to modify.';
+                                        console.error(msg);
+                                        setValidationError(msg);
                                         return;
                                     }
 
+                                    const prevState = localIssue;
                                     setLocalIssue(prev => prev ? ({ ...prev, releasedInVersion: newRIV }) : null);
                                     updateIssueRIV(issue.id, prevRIV, newRIV).then(() => {
                                         onUpdate();
                                     }).catch((err) => {
                                         console.error("Failed to update RIV:", err);
-                                        setLocalIssue(issue);
+                                        setLocalIssue(prevState);
                                     });
                                 }}
                                 disabled={
@@ -410,10 +467,10 @@ export const IssueDetailModal: React.FC<IssueDetailModalProps> = ({ issue, onClo
                         <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">Description / Message</h4>
                         <div className="bg-slate-950 p-4 rounded-xl border border-slate-800 text-slate-300 whitespace-pre-wrap leading-relaxed">
                             {localIssue.description || localIssue.message}
-                            {localIssue.url && (
+                            {sanitizeUrl(localIssue.url) && (
                                 <div className="mt-4 pt-4 border-t border-slate-800/50">
                                     <a
-                                        href={localIssue.url}
+                                        href={sanitizeUrl(localIssue.url)!}
                                         target="_blank"
                                         rel="noopener noreferrer"
                                         className="inline-flex items-center gap-2 text-sm text-brand-400 hover:text-brand-300 font-medium"
@@ -423,16 +480,16 @@ export const IssueDetailModal: React.FC<IssueDetailModalProps> = ({ issue, onClo
                                     </a>
                                 </div>
                             )}
-                            {localIssue.attachmentUrl && (
+                            {sanitizeUrl(localIssue.attachmentUrl) && (
                                 <div className="mt-4 pt-4 border-t border-slate-800/50">
                                     <a
-                                        href={localIssue.attachmentUrl}
+                                        href={sanitizeUrl(localIssue.attachmentUrl)!}
                                         target="_blank"
                                         rel="noopener noreferrer"
                                         className="block relative rounded-lg overflow-hidden border border-slate-800 bg-black/50 hover:border-slate-600 transition-colors"
                                     >
                                         <img
-                                            src={localIssue.attachmentUrl}
+                                            src={sanitizeUrl(localIssue.attachmentUrl)!}
                                             alt="Attachment"
                                             className="max-h-64 object-contain mx-auto"
                                         />

@@ -1,4 +1,4 @@
-﻿import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import Login from './pages/Login';
 import AccessDenied from './pages/AccessDenied';
 import Dashboard from './pages/Dashboard';
@@ -19,18 +19,42 @@ import Broadcast from './pages/Broadcast';
 import CategoryRegistry from './pages/CategoryRegistry';
 import OperatorReport from './pages/OperatorReport';
 import ReleaseVersions from './pages/ReleaseVersions';
+import TesterUsageDashboard from './pages/TesterUsageDashboard';
 import Exams from './pages/Exams';
 import ExamEditor from './pages/ExamEditor';
+import OnboardingFlows from './pages/OnboardingFlows';
+import FlowBuilder from './pages/FlowBuilder';
+import OnboardingAnalytics from './pages/OnboardingAnalytics';
+import SdkSetup from './pages/SdkSetup';
 
-// Placeholder components for pages we haven't built yet
-const Placeholder = ({ title }: { title: string }) => (
-  <div className="flex flex-col gap-4">
-    <h1 className="text-3xl font-bold text-white tracking-tight">{title}</h1>
-    <div className="bg-slate-900 border border-slate-800 rounded-3xl p-12 text-center">
-      <p className="text-slate-400">The {title} page is under construction.</p>
-    </div>
-  </div>
-);
+// GameForge
+import GameForgeDashboard from './pages/GameForgeDashboard';
+import GameForgeGames from './pages/GameForgeGames';
+import GameForgeGameEditor from './pages/GameForgeGameEditor';
+import GameForgePlayers from './pages/GameForgePlayers';
+import GameForgePlayerDetail from './pages/GameForgePlayerDetail';
+import GameForgeLeaderboards from './pages/GameForgeLeaderboards';
+import GameForgeAnalytics from './pages/GameForgeAnalytics';
+import GameForgeSubscriptions from './pages/GameForgeSubscriptions';
+import GameForgePayments from './pages/GameForgePayments';
+import GameForgeNotifications from './pages/GameForgeNotifications';
+import GameForgeAI from './pages/GameForgeAI';
+import GameForgeWorkflows from './pages/GameForgeWorkflows';
+import GameForgeWorkflowEditor from './pages/GameForgeWorkflowEditor';
+
+// v1.17.0 — New Pages
+import BillingHistory from './pages/BillingHistory';
+import AuditTimeline from './pages/AuditTimeline';
+import UsageBillingView from './pages/UsageBillingView';
+import BillingAlerts from './pages/BillingAlerts';
+import UsageConfig from './pages/UsageConfig';
+import UnresolvedBillingEvents from './pages/UnresolvedBillingEvents';
+import InactivePaidUsers from './pages/InactivePaidUsers';
+import ReleaseReadiness from './pages/ReleaseReadiness';
+import RevenueDashboard from './pages/RevenueDashboard';
+import TesterFunnel from './pages/TesterFunnel';
+import TesterConversion from './pages/TesterConversion';
+
 
 function App() {
   return (
@@ -52,6 +76,7 @@ function App() {
           <Route path="/issues" element={<Issues />} />
           <Route path="/broadcast" element={<Broadcast />} />
           <Route path="/tester-activity" element={<TesterActivity />} />
+          <Route path="/usage-dashboard" element={<TesterUsageDashboard />} />
           <Route path="/marketing-assets" element={<MarketingAssets />} />
           <Route path="/marketing/leads" element={<LeadsPage />} />
           <Route path="/marketing/outreach" element={<OutreachPage />} />
@@ -63,7 +88,44 @@ function App() {
           <Route path="/exams" element={<Exams />} />
           <Route path="/exams/:examId" element={<ExamEditor />} />
           <Route path="/operator-report" element={<OperatorReport />} />
-          <Route path="/settings" element={<Placeholder title="Settings" />} />
+          <Route path="/onboarding" element={<OnboardingFlows />} />
+          <Route path="/onboarding/new" element={<FlowBuilder />} />
+          <Route path="/onboarding/analytics" element={<OnboardingAnalytics />} />
+          <Route path="/onboarding/sdk-setup" element={<SdkSetup />} />
+          <Route path="/onboarding/:flowId" element={<FlowBuilder />} />
+
+          {/* v1.17.0 — Billing & Revenue */}
+          <Route path="/billing-history" element={<BillingHistory />} />
+          <Route path="/unresolved-billing" element={<UnresolvedBillingEvents />} />
+          <Route path="/revenue" element={<RevenueDashboard />} />
+          <Route path="/billing-alerts" element={<BillingAlerts />} />
+          <Route path="/usage-billing" element={<UsageBillingView />} />
+          <Route path="/inactive-paid" element={<InactivePaidUsers />} />
+
+          {/* v1.17.0 — Analytics & Tester Insights */}
+          <Route path="/usage-config" element={<UsageConfig />} />
+          <Route path="/tester-funnel" element={<TesterFunnel />} />
+          <Route path="/tester-conversion" element={<TesterConversion />} />
+
+          {/* v1.17.0 — Audit & Release */}
+          <Route path="/audit-timeline" element={<AuditTimeline />} />
+          <Route path="/release-readiness" element={<ReleaseReadiness />} />
+
+          {/* GameForge */}
+          <Route path="/game-forge" element={<GameForgeDashboard />} />
+          <Route path="/game-forge/games" element={<GameForgeGames />} />
+          <Route path="/game-forge/games/:gameId" element={<GameForgeGameEditor />} />
+          <Route path="/game-forge/players" element={<GameForgePlayers />} />
+          <Route path="/game-forge/players/:playerId" element={<GameForgePlayerDetail />} />
+          <Route path="/game-forge/leaderboards" element={<GameForgeLeaderboards />} />
+          <Route path="/game-forge/analytics" element={<GameForgeAnalytics />} />
+          <Route path="/game-forge/subscriptions" element={<GameForgeSubscriptions />} />
+          <Route path="/game-forge/payments" element={<GameForgePayments />} />
+          <Route path="/game-forge/notifications" element={<GameForgeNotifications />} />
+          <Route path="/game-forge/ai" element={<GameForgeAI />} />
+          <Route path="/game-forge/workflows" element={<GameForgeWorkflows />} />
+          <Route path="/game-forge/workflows/:workflowId" element={<GameForgeWorkflowEditor />} />
+
         </Route>
 
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
@@ -73,4 +135,3 @@ function App() {
 }
 
 export default App;
-

@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { assignMissingIssueIds, repairDuplicateIssueIds, subscribeToReportedIssues, subscribeToIssueCategories, subscribeToReleaseVersions, fetchAllUsersLookup } from '../services/firestoreService';
+import { assignMissingIssueIds, repairDuplicateIssueIds, repairMismatchedPrefixes, subscribeToReportedIssues, subscribeToIssueCategories, subscribeToReleaseVersions, fetchAllUsersLookup, normalizeIssueStatus } from '../services/firestoreService';
+import { useAppSubscribers } from '../hooks/useAppSubscribers';
+import { useApp } from '../context/AppContext';
 import type { ReportedIssue, IssueCategory, ReleaseVersion } from '../types';
 import { useAuth } from '../hooks/useAuth';
 import { OperatorReviewPanel } from '../components/OperatorReviewPanel';
@@ -8,9 +10,12 @@ import { ISSUE_STATUS, ISSUE_STATUS_OPTIONS, ISSUE_PLATFORMS, getStatusColor as 
 
 import {
     AlertCircle,
+    AlertTriangle,
     Calendar,
+    CheckCircle2,
     User,
     ExternalLink,
+    X,
 
     Loader2,
     Filter,
@@ -22,15 +27,14 @@ import {
 } from 'lucide-react';
 import { ImportIssuesModal } from '../components/ImportIssuesModal';
 
-// Resolve legacy and missing status values to canonical form
-const resolveStatus = (s?: string): string => {
-    if (!s) return 'new';
-    const v = s.toLowerCase();
-    if (v === 'open') return 'new';
-    if (v === 'working' || v === 'in progress') return 'in_progress';
-    if (v === 'fixed') return 'resolved';
-    return v;
+const sanitizeUrl = (url: string | undefined): string | undefined => {
+    if (!url) return undefined;
+    if (url.startsWith('http://') || url.startsWith('https://')) return url;
+    return undefined; // reject non-http/https URLs entirely
 };
+
+const STALE_ISSUE_THRESHOLD_MS = 14 * 86400000; // 14 days
+
 
 // --- Issue State Drift Helpers ---
 // Compute days since last status change (uses updatedAt, falls back to timestamp/createdAt)
@@ -99,6 +103,8 @@ const savePresets = (presets: IssueFilterPreset[]): void => {
 
 const Issues: React.FC = () => {
     const { isAdmin } = useAuth();
+    const { appId } = useApp();
+    const { filterByUid } = useAppSubscribers();
     const [issues, setIssues] = useState<ReportedIssue[]>([]);
     const [loading, setLoading] = useState(true);
     const [isReviewPanelOpen, setIsReviewPanelOpen] = useState(false);
@@ -106,8 +112,8 @@ const Issues: React.FC = () => {
 
     const [isAssigning, setIsAssigning] = useState(false);
 
-    // Filter & Sort State
-    const [filterApp, setFilterApp] = useState<string>('all');
+    // Filter & Sort State — default filterApp to active app from sidebar
+    const [filterApp, setFilterApp] = useState<string>(appId);
     const [filterType, setFilterType] = useState<string>('all');
     const [filterStatuses, setFilterStatuses] = useState<string[]>([
         ISSUE_STATUS.NEW,
@@ -121,10 +127,21 @@ const Issues: React.FC = () => {
     const [filterClassification, setFilterClassification] = useState<string>('all');
     const [filterAssignee, setFilterAssignee] = useState<string>('all');
     const [filterPFV, setFilterPFV] = useState<string>('all');
+    const [filterRIV, setFilterRIV] = useState<string>('all');
+    const [filterEnvironment, setFilterEnvironment] = useState<string>('all');
+    const [filterVersion, setFilterVersion] = useState<string>('all');
     const [releaseVersions, setReleaseVersions] = useState<ReleaseVersion[]>([]);
-    const [sortOrder, setSortOrder] = useState<'newest' | 'oldest' | 'issue_id_desc' | 'issue_id_asc' | 'severity_desc' | 'severity_asc' | 'type_asc' | 'type_desc' | 'classification_risk' | 'organized' | 'assignee_asc' | 'assignee_desc' | 'stuck_first'>('newest');
+    const [sortOrder, setSortOrder] = useState<'newest' | 'oldest' | 'issue_id_desc' | 'issue_id_asc' | 'severity_desc' | 'severity_asc' | 'type_asc' | 'type_desc' | 'classification_risk' | 'organized' | 'assignee_asc' | 'assignee_desc' | 'stuck_first' | 'riv_asc' | 'riv_desc'>('newest');
     const [categories, setCategories] = useState<IssueCategory[]>([]);
     const [isImportOpen, setIsImportOpen] = useState(false);
+    const [statusMessage, setStatusMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
+
+    // Auto-dismiss status message after 5 seconds
+    useEffect(() => {
+        if (!statusMessage) return;
+        const timer = setTimeout(() => setStatusMessage(null), 5000);
+        return () => clearTimeout(timer);
+    }, [statusMessage]);
 
     // Filter Presets State
     const [presets, setPresets] = useState<IssueFilterPreset[]>(() => loadPresets());
@@ -181,17 +198,22 @@ const Issues: React.FC = () => {
         return () => unsubscribe();
     }, []);
 
+    // Sync filterApp when sidebar app changes
+    useEffect(() => {
+        setFilterApp(appId);
+    }, [appId]);
+
     useEffect(() => {
         if (!isAdmin) return;
-        const unsubscribe = subscribeToReleaseVersions((versions) => setReleaseVersions(versions));
+        const unsubscribe = subscribeToReleaseVersions((versions) => setReleaseVersions(versions), appId);
         return () => unsubscribe();
-    }, [isAdmin]);
+    }, [isAdmin, appId]);
 
     useEffect(() => {
         fetchAllUsersLookup()
-            .then(setUsers)
+            .then(data => setUsers(filterByUid(data)))
             .catch((err) => console.error('Failed to fetch users lookup:', err));
-    }, []);
+    }, [filterByUid]);
 
     const formatDate = (val: any): string => {
         try {
@@ -229,6 +251,19 @@ const Issues: React.FC = () => {
         });
     }, [issues, userMap]);
 
+    // Derive unique environment and version values for telemetry filters
+    const uniqueEnvironments = useMemo(() => {
+        const vals = new Set<string>();
+        issues.forEach(i => { if (i.environment) vals.add(i.environment); });
+        return Array.from(vals).sort();
+    }, [issues]);
+
+    const uniqueVersions = useMemo(() => {
+        const vals = new Set<string>();
+        issues.forEach(i => { if (i.version) vals.add(i.version); });
+        return Array.from(vals).sort();
+    }, [issues]);
+
     // Filter Logic
     // Helper to toggle a status in the filter array
     const toggleStatus = (status: string) => {
@@ -248,7 +283,7 @@ const Issues: React.FC = () => {
             if (filterApp !== 'all' && normalizeAppValue(issue.app) !== filterApp) return false;
 
             // Multi-status filter: issue must match one of the selected statuses
-            if (!filterStatuses.includes(resolveStatus(issue.status))) return false;
+            if (!filterStatuses.includes(normalizeIssueStatus(issue.status))) return false;
 
             if (filterType !== 'all' && issue.type !== filterType) return false;
 
@@ -269,6 +304,18 @@ const Issues: React.FC = () => {
                     if (issue.plannedForVersion !== filterPFV) return false;
                 }
             }
+
+            if (filterRIV !== 'all') {
+                if (filterRIV === 'not_released') {
+                    if (issue.releasedInVersion) return false;
+                } else {
+                    if (issue.releasedInVersion !== filterRIV) return false;
+                }
+            }
+
+            // Telemetry filters
+            if (filterEnvironment !== 'all' && (issue.environment || '') !== filterEnvironment) return false;
+            if (filterVersion !== 'all' && (issue.version || '') !== filterVersion) return false;
 
             if (filterAssignee !== 'all' && resolveAssignee(issue.userId) !== filterAssignee) return false;
 
@@ -299,8 +346,8 @@ const Issues: React.FC = () => {
                     [ISSUE_STATUS.RELEASED]: 4,
                     [ISSUE_STATUS.CLOSED]: 5
                 };
-                const statA = statusMap[resolveStatus(a.status)] ?? 99;
-                const statB = statusMap[resolveStatus(b.status)] ?? 99;
+                const statA = statusMap[normalizeIssueStatus(a.status)] ?? 99;
+                const statB = statusMap[normalizeIssueStatus(b.status)] ?? 99;
                 if (statA !== statB) return statA - statB;
 
                 // 2. Severity Priority (Critical to Low)
@@ -317,10 +364,10 @@ const Issues: React.FC = () => {
                 // 4. Tie-breaker: ID
                 const getNumericId = (id: string, displayId?: string) => {
                     if (displayId) {
-                        const match = displayId.match(/EC-(\d+)/);
+                        const match = displayId.match(/[A-Z]+-(\d+)/);
                         if (match) return parseInt(match[1], 10);
                     }
-                    const matchId = id && id.match(/EC-(\d+)/);
+                    const matchId = id && id.match(/[A-Z]+-(\d+)/);
                     if (matchId) return parseInt(matchId[1], 10);
                     return 0;
                 };
@@ -332,11 +379,11 @@ const Issues: React.FC = () => {
                 const getNumericId = (id: string, displayId?: string) => {
                     // Try displayId first (e.g. "EC-123")
                     if (displayId) {
-                        const match = displayId.match(/EC-(\d+)/);
+                        const match = displayId.match(/[A-Z]+-(\d+)/);
                         if (match) return parseInt(match[1], 10);
                     }
                     // Fallback to id if it follows the pattern (unlikely but safe)
-                    const matchId = id && id.match(/EC-(\d+)/);
+                    const matchId = id && id.match(/[A-Z]+-(\d+)/);
                     if (matchId) return parseInt(matchId[1], 10);
 
                     return 0;
@@ -385,6 +432,16 @@ const Issues: React.FC = () => {
                 return sortOrder === 'assignee_asc' ? cmp : -cmp;
             }
 
+            if (sortOrder === 'riv_asc' || sortOrder === 'riv_desc') {
+                const rivA = a.releasedInVersion || '';
+                const rivB = b.releasedInVersion || '';
+                // Unset RIV always sorts to bottom
+                if (!rivA && rivB) return 1;
+                if (rivA && !rivB) return -1;
+                const cmp = rivA.localeCompare(rivB);
+                return sortOrder === 'riv_asc' ? cmp : -cmp;
+            }
+
             // Stuck First: sort by days in current status (descending)
             if (sortOrder === 'stuck_first') {
                 const daysA = getDaysInStatus(a);
@@ -398,7 +455,7 @@ const Issues: React.FC = () => {
             const dateB = getMillis(b);
             return sortOrder === 'newest' ? dateB - dateA : dateA - dateB;
         });
-    }, [issues, filterApp, filterType, filterStatuses, filterSeverity, filterClassification, filterAssignee, filterPlatform, filterPFV, searchUser, sortOrder, userMap]);
+    }, [issues, filterApp, filterType, filterStatuses, filterSeverity, filterClassification, filterAssignee, filterPlatform, filterPFV, filterRIV, filterEnvironment, filterVersion, searchUser, sortOrder, userMap]);
 
 
 
@@ -407,13 +464,13 @@ const Issues: React.FC = () => {
         try {
             const count = await assignMissingIssueIds();
             if (count > 0) {
-                alert(`Assigned IDs to ${count} issues.`);
+                setStatusMessage({ text: `Assigned IDs to ${count} issues.`, type: 'success' });
             } else {
-                alert("No missing IDs found.");
+                setStatusMessage({ text: "No missing IDs found.", type: 'success' });
             }
         } catch (error) {
             console.error("Failed to assign IDs:", error);
-            alert("Failed to assign IDs. Check console.");
+            setStatusMessage({ text: "Failed to assign IDs. Check console.", type: 'error' });
         } finally {
             setIsAssigning(false);
         }
@@ -424,30 +481,60 @@ const Issues: React.FC = () => {
         try {
             const result = await repairDuplicateIssueIds();
             if (result.fixed > 0) {
-                alert(`Repaired ${result.fixed} duplicate IDs:\n${result.log.join('\n')}`);
+                setStatusMessage({ text: `Repaired ${result.fixed} duplicate IDs:\n${result.log.join('\n')}`, type: 'success' });
             } else {
-                alert(result.log[0]);
+                setStatusMessage({ text: result.log[0], type: 'success' });
             }
         } catch (error) {
             console.error("Failed to repair IDs:", error);
-            alert("Failed to repair IDs. Check console.");
+            setStatusMessage({ text: "Failed to repair IDs. Check console.", type: 'error' });
+        } finally {
+            setIsAssigning(false);
+        }
+    };
+
+    const handleRepairPrefixes = async () => {
+        setIsAssigning(true);
+        try {
+            const result = await repairMismatchedPrefixes();
+            if (result.fixed > 0) {
+                setStatusMessage({ text: `Fixed ${result.fixed} mismatched prefixes:\n${result.log.join('\n')}`, type: 'success' });
+            } else {
+                setStatusMessage({ text: result.log[0], type: 'success' });
+            }
+        } catch (error) {
+            console.error("Failed to repair prefixes:", error);
+            setStatusMessage({ text: "Failed to repair prefixes. Check console.", type: 'error' });
         } finally {
             setIsAssigning(false);
         }
     };
 
     const handleExport = () => {
-        const exportData = issues.map(i => ({
-            id: i.id,
-            app: i.app,
-            summary: i.message || i.description || 'No Description',
-            severity: i.severity || 'S3',
-            classification: i.classification || 'unclassified',
-            status: i.status || 'new',
-            createdAt: i.createdAt?.toDate?.()?.toISOString() || i.timestamp?.toDate?.()?.toISOString() || null,
-            lastUpdated: i.updatedAt?.toDate?.()?.toISOString() || null,
-            adminNotes: i.notes?.map(n => n.text) || []
-        }));
+        const now = Date.now();
+        const STALE_MS = STALE_ISSUE_THRESHOLD_MS;
+        const exportData = issues.map(i => {
+            const createdAt = i.createdAt?.toDate?.()?.toISOString() || i.timestamp?.toDate?.()?.toISOString() || null;
+            const lastUpdated = i.updatedAt?.toDate?.()?.toISOString() || null;
+            const createdMs = createdAt ? new Date(createdAt).getTime() : null;
+            const updatedMs = lastUpdated ? new Date(lastUpdated).getTime() : null;
+            const ageDays = createdMs != null ? Math.floor((now - createdMs) / 86400000) : null;
+            const isStale = updatedMs != null ? (now - updatedMs) > STALE_MS : false;
+            return {
+                ...i,
+                id: i.id,
+                app: i.app,
+                summary: i.message || i.description || 'No Description',
+                severity: i.severity || 'S3',
+                classification: i.classification || 'unclassified',
+                status: i.status || 'new',
+                createdAt,
+                lastUpdated,
+                adminNotes: i.notes?.map(n => n.text) || [],
+                ageDays,
+                isStale,
+            };
+        });
 
         const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
         const url = URL.createObjectURL(blob);
@@ -598,7 +685,7 @@ const Issues: React.FC = () => {
                             ? 'bg-slate-800/50 text-slate-600 cursor-not-allowed'
                             : 'bg-brand-600 hover:bg-brand-500 text-white shadow-lg shadow-brand-500/20'
                             }`}
-                        title="Assign EC-### IDs to missing issues"
+                        title="Assign IDs to issues missing a displayId"
                     >
                         {isAssigning ? <Loader2 className="w-5 h-5 animate-spin" /> : <RefreshCw className="w-5 h-5 rotate-90" />}
                         <span className="hidden md:inline text-xs font-medium">Assign IDs</span>
@@ -611,10 +698,23 @@ const Issues: React.FC = () => {
                             ? 'bg-slate-800/50 text-slate-600 cursor-not-allowed'
                             : 'bg-amber-900/60 hover:bg-amber-800/70 text-amber-300 border border-amber-700/40'
                             }`}
-                        title="Repair duplicate EC-### IDs (one-time)"
+                        title="Repair duplicate IDs within each prefix"
                     >
                         {isAssigning ? <Loader2 className="w-5 h-5 animate-spin" /> : <AlertCircle className="w-5 h-5" />}
                         <span className="hidden md:inline text-xs font-medium">Repair IDs</span>
+                    </button>
+
+                    <button
+                        onClick={handleRepairPrefixes}
+                        disabled={isAssigning}
+                        className={`p-2 rounded-lg transition-colors flex items-center gap-2 ${isAssigning
+                            ? 'bg-slate-800/50 text-slate-600 cursor-not-allowed'
+                            : 'bg-purple-900/60 hover:bg-purple-800/70 text-purple-300 border border-purple-700/40'
+                            }`}
+                        title="Fix issues whose prefix doesn't match their app (e.g. EC- on a migraine-tracker issue)"
+                    >
+                        {isAssigning ? <Loader2 className="w-5 h-5 animate-spin" /> : <AlertCircle className="w-5 h-5" />}
+                        <span className="hidden md:inline text-xs font-medium">Fix Prefixes</span>
                     </button>
 
                 </div>
@@ -639,6 +739,7 @@ const Issues: React.FC = () => {
                                 onClick={() => deletePreset(preset.id)}
                                 className="px-1.5 py-1.5 text-xs bg-slate-800 text-slate-500 border border-l-0 border-slate-700 rounded-r-lg hover:text-red-400 hover:border-red-500/40"
                                 title="Delete preset"
+                                aria-label={`Delete preset ${preset.name}`}
                             >
                                 ×
                             </button>
@@ -791,6 +892,51 @@ const Issues: React.FC = () => {
                     </select>
                 )}
 
+                {/* RIV Filter (Admin Only) */}
+                {isAdmin && (
+                    <select
+                        value={filterRIV}
+                        onChange={(e) => setFilterRIV(e.target.value)}
+                        className="bg-slate-950 border border-slate-800 text-slate-300 text-sm rounded-lg focus:ring-brand-500 focus:border-brand-500 block w-full md:w-auto p-2.5"
+                    >
+                        <option value="all">All Versions (RIV)</option>
+                        <option value="not_released">Not Released</option>
+                        {releaseVersions.map(v => (
+                            <option key={v.id} value={v.version}>
+                                {v.version} ({v.status})
+                            </option>
+                        ))}
+                    </select>
+                )}
+
+                {/* Environment Filter */}
+                {uniqueEnvironments.length > 0 && (
+                    <select
+                        value={filterEnvironment}
+                        onChange={(e) => setFilterEnvironment(e.target.value)}
+                        className="bg-slate-950 border border-slate-800 text-slate-300 text-sm rounded-lg focus:ring-brand-500 focus:border-brand-500 block w-full md:w-auto p-2.5"
+                    >
+                        <option value="all">All Environments</option>
+                        {uniqueEnvironments.map(env => (
+                            <option key={env} value={env}>{env}</option>
+                        ))}
+                    </select>
+                )}
+
+                {/* App Version Filter */}
+                {uniqueVersions.length > 0 && (
+                    <select
+                        value={filterVersion}
+                        onChange={(e) => setFilterVersion(e.target.value)}
+                        className="bg-slate-950 border border-slate-800 text-slate-300 text-sm rounded-lg focus:ring-brand-500 focus:border-brand-500 block w-full md:w-auto p-2.5"
+                    >
+                        <option value="all">All App Versions</option>
+                        {uniqueVersions.map(v => (
+                            <option key={v} value={v}>{v}</option>
+                        ))}
+                    </select>
+                )}
+
                 {/* Assigned To Filter */}
                 <select
                     value={filterAssignee}
@@ -824,6 +970,8 @@ const Issues: React.FC = () => {
                         <option value="type_desc">Type (Z → A)</option>
                         <option value="assignee_asc">Assigned To (A → Z)</option>
                         <option value="assignee_desc">Assigned To (Z → A)</option>
+                        <option value="riv_asc">RIV (A → Z)</option>
+                        <option value="riv_desc">RIV (Z → A)</option>
                         <option value="organized">Organized (Smart Sort)</option>
                     </select>
                 </div>
@@ -868,13 +1016,13 @@ const Issues: React.FC = () => {
                                         <div className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${getSeverityColor(issue.severity)}`}>
                                             {issue.severity || 'S3'}
                                         </div>
-                                        <div className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${getStatusColor(resolveStatus(issue.status))} capitalize`}>
-                                            {resolveStatus(issue.status)}
+                                        <div className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${getStatusColor(normalizeIssueStatus(issue.status))} capitalize`}>
+                                            {normalizeIssueStatus(issue.status)}
                                         </div>
                                         {/* State Drift Indicator */}
                                         {(() => {
                                             const days = getDaysInStatus(issue);
-                                            const drift = getDriftLevel(resolveStatus(issue.status), days);
+                                            const drift = getDriftLevel(normalizeIssueStatus(issue.status), days);
                                             if (days === 0) return null;
                                             return (
                                                 <div className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${drift === 'critical'
@@ -903,6 +1051,12 @@ const Issues: React.FC = () => {
                                                 {issue.plannedForVersion}
                                             </div>
                                         )}
+                                        {issue.releasedInVersion ? (
+                                            <div className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium border border-emerald-700/40 bg-emerald-900/20 text-emerald-400">
+                                                <Tag className="w-3 h-3" />
+                                                {issue.releasedInVersion}
+                                            </div>
+                                        ) : null}
                                     </div>
                                     <div className="flex items-center gap-2 text-slate-400 text-sm">
                                         <Calendar className="w-4 h-4" />
@@ -934,8 +1088,8 @@ const Issues: React.FC = () => {
                                         {issue.description || issue.message}
                                     </p>
 
-                                    {issue.url && (
-                                        <a href={issue.url} target="_blank" rel="noopener noreferrer"
+                                    {sanitizeUrl(issue.url) && (
+                                        <a href={sanitizeUrl(issue.url)!} target="_blank" rel="noopener noreferrer"
                                             className="inline-flex items-center gap-2 text-sm text-brand-400 hover:text-brand-300">
                                             <ExternalLink className="w-4 h-4" />
                                             Context URL
@@ -986,7 +1140,12 @@ const Issues: React.FC = () => {
             <IssueDetailModal
                 issue={selectedIssue}
                 onClose={() => setSelectedIssue(null)}
-                onUpdate={() => {}}
+                onUpdate={() => {
+                    if (selectedIssue) {
+                        const refreshed = issues.find(i => i.id === selectedIssue.id);
+                        setSelectedIssue(refreshed ?? null);
+                    }
+                }}
             />
 
             {/* Import Issues Modal */}
@@ -994,6 +1153,27 @@ const Issues: React.FC = () => {
                 isOpen={isImportOpen}
                 onClose={() => setIsImportOpen(false)}
             />
+
+            {/* Status Message Toast */}
+            {statusMessage && (
+                <div className={`fixed bottom-8 right-8 max-w-md p-4 rounded-2xl border text-sm flex items-center gap-3 z-[70] shadow-lg ${
+                    statusMessage.type === 'success'
+                        ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-200'
+                        : 'bg-red-500/10 border-red-500/20 text-red-200'
+                }`}>
+                    {statusMessage.type === 'success'
+                        ? <CheckCircle2 className="w-5 h-5 flex-shrink-0" />
+                        : <AlertTriangle className="w-5 h-5 flex-shrink-0" />}
+                    <span className="whitespace-pre-line">{statusMessage.text}</span>
+                    <button
+                        onClick={() => setStatusMessage(null)}
+                        className="ml-auto flex-shrink-0 hover:opacity-70 transition-opacity"
+                        aria-label="Dismiss notification"
+                    >
+                        <X className="w-4 h-4" />
+                    </button>
+                </div>
+            )}
         </div >
     );
 };

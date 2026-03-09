@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../hooks/useAuth';
 import {
     searchUsers,
@@ -15,11 +15,13 @@ import {
     grantFreshTrial,
     updateUserProfile,
     adminUpdateEmail,
-    setBillingStatus
+    setBillingStatus,
+    setUserTag,
 } from '../services/firestoreService';
+import { useAppSubscribers } from '../hooks/useAppSubscribers';
 import { getEffectiveAccess } from '../utils/effectiveAccess';
-import { getBandFromScore, BAND_COLORS, ALL_BANDS } from '../utils/usageScore';
-import type { User, TesterStats, UsageBand, BillingStatus } from '../types';
+import { getBandFromScore, BAND_COLORS, ALL_BANDS, getScoreConfidence, CONFIDENCE_COLORS } from '../utils/usageScore';
+import type { User, TesterStats, UsageBand, BillingStatus, UserTag } from '../types';
 import { APP_OPTIONS } from '../constants';
 import type { AppKey } from '../constants';
 import {
@@ -50,7 +52,8 @@ import {
     RefreshCw,
     Pencil,
     Copy,
-    ArrowUpDown
+    ArrowUpDown,
+    Lock
 } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -66,21 +69,26 @@ const UsersPage: React.FC = () => {
     const [searchTerm, setSearchTerm] = useState('');
     const [showTestersOnly, setShowTestersOnly] = useState(false);
     const [showArchived, setShowArchived] = useState(false);
+    const [archivedCount, setArchivedCount] = useState(0);
     const [loading, setLoading] = useState(true);
     const [selectedUser, setSelectedUser] = useState<User | null>(null);
 
     // Actions State
     const [actionLoading, setActionLoading] = useState(false);
     const [confirmAction, setConfirmAction] = useState<{
-        type: 'GRANT' | 'REVOKE' | 'FIX' | 'DELETE' | 'START_TRIAL' | 'EXTEND_TRIAL' | 'CANCEL_TRIAL' | 'ARCHIVE' | 'RESTORE' | 'GRANT_FRESH_TRIAL';
+        type: 'GRANT' | 'REVOKE' | 'FIX' | 'DELETE' | 'ENABLE' | 'START_TRIAL' | 'EXTEND_TRIAL' | 'CANCEL_TRIAL' | 'ARCHIVE' | 'RESTORE' | 'GRANT_FRESH_TRIAL';
         user: User;
         isOpen: boolean;
     } | null>(null);
     const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
+    const [undoArchive, setUndoArchive] = useState<{ uid: string; email: string } | null>(null);
+    const undoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const [trialAppId, setTrialAppId] = useState<AppKey>('exam-coach');
+    const [trialDays, setTrialDays] = useState<number>(14);
 
     // Usage Filter & Sort
     const [filterBand, setFilterBand] = useState<UsageBand | 'all'>('all');
+    const [filterBilling, setFilterBilling] = useState<BillingStatus | 'all'>('all');
     const [sortByUsage, setSortByUsage] = useState<'none' | 'asc' | 'desc'>('none');
 
     // Billing override state
@@ -94,6 +102,7 @@ const UsersPage: React.FC = () => {
 
     const functions = getFunctions();
     const { isAdmin, loading: authLoading } = useAuth();
+    const { appId, filterByApp } = useAppSubscribers();
 
     // Initial Load
     useEffect(() => {
@@ -101,7 +110,14 @@ const UsersPage: React.FC = () => {
             fetchUsers();
             fetchStats();
         }
-    }, [searchTerm, showTestersOnly, showArchived, filterBand, sortByUsage, authLoading, isAdmin]);
+    }, [searchTerm, showTestersOnly, showArchived, filterBand, filterBilling, sortByUsage, authLoading, isAdmin, appId, filterByApp]);
+
+    // Clear undo-archive timer on unmount
+    useEffect(() => {
+        return () => {
+            if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
+        };
+    }, []);
 
     const fetchStats = async () => {
         if (!isAdmin) return;
@@ -125,9 +141,14 @@ const UsersPage: React.FC = () => {
             } else {
                 data = await searchUsers(searchTerm);
             }
+            // App-scoped filter: restrict to users subscribed to the active app
+            data = filterByApp(data);
+
             // Client-side archive filter (avoids Firestore composite index requirement)
+            const archivedUsers = data.filter(u => u.archived === true);
+            setArchivedCount(archivedUsers.length);
             let filtered = showArchived
-                ? data.filter(u => u.archived === true)
+                ? archivedUsers
                 : data.filter(u => u.archived !== true);
 
             // Usage band filter
@@ -136,6 +157,11 @@ const UsersPage: React.FC = () => {
                     const band = u.usageBand || getBandFromScore(u.usageScore ?? 0);
                     return band === filterBand;
                 });
+            }
+
+            // Billing status filter
+            if (filterBilling !== 'all') {
+                filtered = filtered.filter(u => (u.billingStatus || 'unknown') === filterBilling);
             }
 
             // Usage score sort
@@ -150,6 +176,7 @@ const UsersPage: React.FC = () => {
             setUsers(filtered);
         } catch (err) {
             console.error("Fetch users error:", err);
+            setMessage({ type: 'error', text: err instanceof Error ? err.message : "Failed to load users" });
         } finally {
             setLoading(false);
         }
@@ -166,11 +193,27 @@ const UsersPage: React.FC = () => {
             fetchStats();
             setConfirmAction(null);
             if (selectedUser) setSelectedUser(null);
-        } catch (err: any) {
+        } catch (err: unknown) {
             console.error("Action failed:", err);
-            setMessage({ type: 'error', text: err.message || "Action failed" });
+            setMessage({ type: 'error', text: err instanceof Error ? err.message : "Action failed" });
         } finally {
             setActionLoading(false);
+        }
+    };
+
+    const handleUndoArchive = async () => {
+        if (!undoArchive) return;
+        if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
+        setUndoArchive(null);
+        setMessage(null);
+        try {
+            await restoreUser(undoArchive.uid);
+            setMessage({ type: 'success', text: `${undoArchive.email} restored` });
+            fetchUsers();
+            fetchStats();
+        } catch (err: unknown) {
+            console.error("Undo archive failed:", err);
+            setMessage({ type: 'error', text: err instanceof Error ? err.message : "Restore failed" });
         }
     };
 
@@ -242,6 +285,7 @@ const UsersPage: React.FC = () => {
     };
 
     const openEditModal = (user: User) => {
+        if (!isAdmin) return;
         setEditForm({
             firstName: user.firstName || '',
             lastName: user.lastName || '',
@@ -256,9 +300,16 @@ const UsersPage: React.FC = () => {
         if (!editUser) return;
 
         const emailChanged = editForm.email.trim() !== (editUser.email || '');
-        if (emailChanged && !emailConfirmOpen) {
-            setEmailConfirmOpen(true);
-            return;
+        if (emailChanged) {
+            const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+            if (!emailRegex.test(editForm.email.trim())) {
+                setMessage({ type: 'error', text: 'Invalid email format' });
+                return;
+            }
+            if (!emailConfirmOpen) {
+                setEmailConfirmOpen(true);
+                return;
+            }
         }
 
         setSaveLoading(true);
@@ -286,9 +337,9 @@ const UsersPage: React.FC = () => {
             }
             setEditUser(null);
             setEmailConfirmOpen(false);
-        } catch (err: any) {
+        } catch (err: unknown) {
             console.error("Edit save failed:", err);
-            setMessage({ type: 'error', text: err.message || "Save failed" });
+            setMessage({ type: 'error', text: err instanceof Error ? err.message : "Save failed" });
         } finally {
             setSaveLoading(false);
         }
@@ -303,6 +354,7 @@ const UsersPage: React.FC = () => {
                         {confirmAction.type === 'REVOKE' && <Ban className="w-8 h-8 text-amber-400" />}
                         {confirmAction.type === 'FIX' && <Wrench className="w-8 h-8 text-blue-400" />}
                         {confirmAction.type === 'DELETE' && <Trash2 className="w-8 h-8 text-red-500" />}
+                        {confirmAction.type === 'ENABLE' && <CheckCircle2 className="w-8 h-8 text-emerald-400" />}
                         {confirmAction.type === 'START_TRIAL' && <Play className="w-8 h-8 text-emerald-400" />}
                         {confirmAction.type === 'EXTEND_TRIAL' && <TimerReset className="w-8 h-8 text-amber-400" />}
                         {confirmAction.type === 'CANCEL_TRIAL' && <XCircle className="w-8 h-8 text-red-500" />}
@@ -315,26 +367,28 @@ const UsersPage: React.FC = () => {
                         {confirmAction.type === 'REVOKE' && 'Revoke Tester Access?'}
                         {confirmAction.type === 'FIX' && 'Fix Tester Access?'}
                         {confirmAction.type === 'DELETE' && 'Disable User?'}
+                        {confirmAction.type === 'ENABLE' && 'Enable User?'}
                         {confirmAction.type === 'START_TRIAL' && 'Start 14-Day Trial?'}
                         {confirmAction.type === 'EXTEND_TRIAL' && 'Extend Trial 14 Days?'}
                         {confirmAction.type === 'CANCEL_TRIAL' && 'Cancel Trial?'}
                         {confirmAction.type === 'ARCHIVE' && 'Archive User?'}
                         {confirmAction.type === 'RESTORE' && 'Restore User?'}
-                        {confirmAction.type === 'GRANT_FRESH_TRIAL' && 'Grant New 14-Day Trial?'}
+                        {confirmAction.type === 'GRANT_FRESH_TRIAL' && `Grant New ${trialDays}-Day Trial?`}
                     </h3>
                     <p className="text-slate-400 text-sm">
                         {confirmAction.type === 'GRANT' && `Grants ${confirmAction.user.email} Pro access for 14 days. This will clear any active trials.`}
-                        {confirmAction.type === 'REVOKE' && `Removes Pro access from ${confirmAction.user.email} immediately.`}
+                        {confirmAction.type === 'REVOKE' && `This will remove tester access for ${confirmAction.user.email} immediately.${confirmAction.user.billingStatus === 'paid' ? ' Their Stripe paid status will be preserved.' : ' They will lose Pro access.'}`}
                         {confirmAction.type === 'FIX' && `Resets ${confirmAction.user.email} access to valid Tester Pro (14 days).`}
-                        {confirmAction.type === 'DELETE' && `Are you sure you want to disable ${confirmAction.user.email}?`}
+                        {confirmAction.type === 'DELETE' && `This will disable ${confirmAction.user.email}'s account and revoke their ability to sign in. They will not be able to access any services until re-enabled.`}
+                        {confirmAction.type === 'ENABLE' && `Re-enable ${confirmAction.user.email}? This restores their auth access.`}
                         {confirmAction.type === 'START_TRIAL' && `Starts a 14-day Pro trial for ${confirmAction.user.email}.`}
-                        {confirmAction.type === 'EXTEND_TRIAL' && `Extends ${confirmAction.user.email}'s trial by 14 days from current end date.`}
-                        {confirmAction.type === 'CANCEL_TRIAL' && `Immediately cancels the active trial for ${confirmAction.user.email}. User will lose Pro access.`}
-                        {confirmAction.type === 'ARCHIVE' && `Archives ${confirmAction.user.email}. User will be hidden from the default list but their access is unchanged. This is reversible.`}
+                        {confirmAction.type === 'EXTEND_TRIAL' && `Extends ${confirmAction.user.email}'s trial by 14 days from current end date.${confirmAction.user.trialEndsAt ? ` Current expiry: ${confirmAction.user.trialEndsAt.toDate().toLocaleDateString()}.` : ''}`}
+                        {confirmAction.type === 'CANCEL_TRIAL' && `This will immediately end the trial for ${confirmAction.user.email}. They will lose Pro access right away${confirmAction.user.trialEndsAt ? ` (trial was set to expire ${confirmAction.user.trialEndsAt.toDate().toLocaleDateString()})` : ''}.`}
+                        {confirmAction.type === 'ARCHIVE' && `This will hide ${confirmAction.user.email} from the default list. Access is unchanged. You can restore them anytime using the 'Show Archived' toggle.`}
                         {confirmAction.type === 'RESTORE' && `Restores ${confirmAction.user.email} to the active users list. Access remains unchanged.`}
                         {confirmAction.type === 'GRANT_FRESH_TRIAL' && (
                             <>
-                                This will reset the user's trial period to 14 days starting now. This action takes effect immediately.
+                                This will reset the user's trial period to <strong>{trialDays} days</strong> starting now. This action takes effect immediately.
                                 <select
                                     value={trialAppId}
                                     onChange={(e) => setTrialAppId(e.target.value as AppKey)}
@@ -343,6 +397,17 @@ const UsersPage: React.FC = () => {
                                     {APP_OPTIONS.map(opt => (
                                         <option key={opt.value} value={opt.value}>{opt.label}</option>
                                     ))}
+                                </select>
+                                <select
+                                    value={trialDays}
+                                    onChange={(e) => setTrialDays(Number(e.target.value))}
+                                    className="mt-2 w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm"
+                                >
+                                    <option value={14}>14 days</option>
+                                    <option value={30}>30 days</option>
+                                    <option value={90}>90 days (3 months)</option>
+                                    <option value={180}>180 days (6 months)</option>
+                                    <option value={365}>365 days (1 year)</option>
                                 </select>
                             </>
                         )}
@@ -370,6 +435,9 @@ const UsersPage: React.FC = () => {
                                 // Mapped to disableUser as per existing implementation "Delete" = "Disable"
                                 const callable = httpsCallable(functions, 'disableUser');
                                 handleAction(async () => { await callable({ targetUid: uid, disabled: true }); }, "User disabled");
+                            } else if (confirmAction.type === 'ENABLE') {
+                                const callable = httpsCallable(functions, 'disableUser');
+                                handleAction(async () => { await callable({ targetUid: uid, disabled: false }); }, "User enabled");
                             } else if (confirmAction.type === 'START_TRIAL') {
                                 handleAction(() => startTrial(uid), "14-day trial started");
                             } else if (confirmAction.type === 'EXTEND_TRIAL') {
@@ -377,17 +445,26 @@ const UsersPage: React.FC = () => {
                             } else if (confirmAction.type === 'CANCEL_TRIAL') {
                                 handleAction(() => cancelTrial(uid), "Trial cancelled");
                             } else if (confirmAction.type === 'ARCHIVE') {
-                                handleAction(() => archiveUser(uid), "User archived");
+                                const archivedEmail = confirmAction.user.email;
+                                handleAction(async () => {
+                                    await archiveUser(uid);
+                                    // Clear any previous undo timer
+                                    if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
+                                    setUndoArchive({ uid, email: archivedEmail });
+                                    // Auto-dismiss undo toast after 8 seconds
+                                    undoTimerRef.current = setTimeout(() => setUndoArchive(null), 8000);
+                                }, "User archived");
                             } else if (confirmAction.type === 'RESTORE') {
                                 handleAction(() => restoreUser(uid), "User restored");
                             } else if (confirmAction.type === 'GRANT_FRESH_TRIAL') {
-                                const expiresDate = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toLocaleDateString();
-                                handleAction(() => grantFreshTrial(uid, trialAppId), `Trial reset. New expiration: ${expiresDate}`);
+                                const expiresDate = new Date(Date.now() + trialDays * 24 * 60 * 60 * 1000).toLocaleDateString();
+                                handleAction(() => grantFreshTrial(uid, trialAppId, trialDays), `${trialDays}-day trial granted. Expires: ${expiresDate}`);
                             }
                         }}
                         className={cn(
                             "flex-1 px-4 py-3 rounded-xl font-bold text-white transition-all flex items-center justify-center gap-2",
                             (confirmAction.type === 'DELETE' || confirmAction.type === 'CANCEL_TRIAL') ? "bg-red-600 hover:bg-red-500" :
+                                confirmAction.type === 'ENABLE' ? "bg-emerald-600 hover:bg-emerald-500" :
                                 (confirmAction.type === 'REVOKE' || confirmAction.type === 'EXTEND_TRIAL') ? "bg-amber-600 hover:bg-amber-500" :
                                     (confirmAction.type === 'START_TRIAL' || confirmAction.type === 'RESTORE') ? "bg-emerald-600 hover:bg-emerald-500" :
                                         confirmAction.type === 'ARCHIVE' ? "bg-slate-600 hover:bg-slate-500" :
@@ -431,7 +508,7 @@ const UsersPage: React.FC = () => {
                         )}
                     >
                         {showArchived ? <ArchiveRestore className="w-4 h-4" /> : <Archive className="w-4 h-4" />}
-                        {showArchived ? "Viewing Archived" : "Viewing Active"}
+                        {showArchived ? "Viewing Archived" : `Show Archived (${archivedCount})`}
                     </button>
                     <button
                         onClick={() => setShowTestersOnly(!showTestersOnly)}
@@ -454,6 +531,18 @@ const UsersPage: React.FC = () => {
                         {ALL_BANDS.map(b => (
                             <option key={b} value={b}>{b}</option>
                         ))}
+                    </select>
+                    <select
+                        value={filterBilling}
+                        onChange={(e) => setFilterBilling(e.target.value as BillingStatus | 'all')}
+                        className="bg-slate-900 border border-slate-800 text-slate-400 text-sm rounded-2xl px-4 py-3 focus:ring-2 focus:ring-brand-500/50 focus:outline-none transition-all"
+                    >
+                        <option value="all">All Billing</option>
+                        <option value="paid">Paid</option>
+                        <option value="tester">Tester</option>
+                        <option value="comped">Comped</option>
+                        <option value="trial">Trial</option>
+                        <option value="unknown">Unknown</option>
                     </select>
                     <button
                         onClick={() => setSortByUsage(prev => prev === 'none' ? 'desc' : prev === 'desc' ? 'asc' : 'none')}
@@ -578,6 +667,11 @@ const UsersPage: React.FC = () => {
                                                         Paid
                                                     </span>
                                                 )}
+                                                {u.billingSource === 'stripe' && (
+                                                    <span className="text-slate-500" title="Set by Stripe — not admin-editable">
+                                                        <Lock className="w-3 h-3" />
+                                                    </span>
+                                                )}
                                                 {u.billingStatus === 'comped' && (
                                                     <span className="px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wider bg-slate-500/10 text-slate-400 border border-slate-500/20">
                                                         Comped
@@ -591,6 +685,18 @@ const UsersPage: React.FC = () => {
                                                 {u.billingStatus === 'tester' && !u.testerOverride && (
                                                     <span className="px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wider bg-amber-500/10 text-amber-400 border border-amber-500/20">
                                                         Tester
+                                                    </span>
+                                                )}
+                                                {u.userTag && (
+                                                    <span className={cn(
+                                                        "px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wider border",
+                                                        u.userTag === 'tester' ? "bg-amber-500/10 text-amber-400 border-amber-500/20" :
+                                                            u.userTag === 'friend' ? "bg-pink-500/10 text-pink-400 border-pink-500/20" :
+                                                                u.userTag === 'influencer' ? "bg-purple-500/10 text-purple-400 border-purple-500/20" :
+                                                                    u.userTag === 'beta' ? "bg-cyan-500/10 text-cyan-400 border-cyan-500/20" :
+                                                                        "bg-slate-500/10 text-slate-400 border-slate-500/20"
+                                                    )}>
+                                                        {u.userTag}
                                                     </span>
                                                 )}
                                             </div>
@@ -661,6 +767,7 @@ const UsersPage: React.FC = () => {
                                                         onClick={() => setConfirmAction({ type: 'FIX', user: u, isOpen: true })}
                                                         className="p-2 hover:bg-slate-800 rounded-lg text-blue-400 transition-colors"
                                                         title="Fix Tester Access"
+                                                        aria-label="Fix tester access"
                                                     >
                                                         <Wrench className="w-4 h-4" />
                                                     </button>
@@ -670,6 +777,7 @@ const UsersPage: React.FC = () => {
                                                         onClick={() => setConfirmAction({ type: 'REVOKE', user: u, isOpen: true })}
                                                         className="p-2 hover:bg-slate-800 rounded-lg text-amber-500 transition-colors"
                                                         title="Revoke Tester Access"
+                                                        aria-label="Revoke tester access"
                                                     >
                                                         <Ban className="w-4 h-4" />
                                                     </button>
@@ -678,6 +786,7 @@ const UsersPage: React.FC = () => {
                                                         onClick={() => setConfirmAction({ type: 'GRANT', user: u, isOpen: true })}
                                                         className="p-2 hover:bg-slate-800 rounded-lg text-purple-400 transition-colors"
                                                         title="Grant Tester Access"
+                                                        aria-label="Grant tester access"
                                                     >
                                                         <Zap className="w-4 h-4" />
                                                     </button>
@@ -689,6 +798,7 @@ const UsersPage: React.FC = () => {
                                                         onClick={() => setConfirmAction({ type: 'START_TRIAL', user: u, isOpen: true })}
                                                         className="p-2 hover:bg-slate-800 rounded-lg text-emerald-400 transition-colors"
                                                         title="Start 14-Day Trial"
+                                                        aria-label="Start 14-day trial"
                                                     >
                                                         <Play className="w-4 h-4" />
                                                     </button>
@@ -699,6 +809,7 @@ const UsersPage: React.FC = () => {
                                                             onClick={() => setConfirmAction({ type: 'EXTEND_TRIAL', user: u, isOpen: true })}
                                                             className="p-2 hover:bg-slate-800 rounded-lg text-amber-400 transition-colors"
                                                             title="Extend 14 Days"
+                                                            aria-label="Extend trial 14 days"
                                                         >
                                                             <TimerReset className="w-4 h-4" />
                                                         </button>
@@ -706,6 +817,7 @@ const UsersPage: React.FC = () => {
                                                             onClick={() => setConfirmAction({ type: 'CANCEL_TRIAL', user: u, isOpen: true })}
                                                             className="p-2 hover:bg-slate-800 rounded-lg text-red-400 transition-colors"
                                                             title="Cancel Trial"
+                                                            aria-label="Cancel trial"
                                                         >
                                                             <XCircle className="w-4 h-4" />
                                                         </button>
@@ -718,6 +830,7 @@ const UsersPage: React.FC = () => {
                                                         onClick={() => setConfirmAction({ type: 'RESTORE', user: u, isOpen: true })}
                                                         className="p-2 hover:bg-slate-800 rounded-lg text-emerald-400 transition-colors"
                                                         title="Restore User"
+                                                        aria-label="Restore user"
                                                     >
                                                         <ArchiveRestore className="w-4 h-4" />
                                                     </button>
@@ -726,24 +839,38 @@ const UsersPage: React.FC = () => {
                                                         onClick={() => setConfirmAction({ type: 'ARCHIVE', user: u, isOpen: true })}
                                                         className="p-2 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-slate-300 transition-colors"
                                                         title="Archive User"
+                                                        aria-label="Archive user"
                                                     >
                                                         <Archive className="w-4 h-4" />
                                                     </button>
                                                 )}
 
-                                                {/* Delete/Disable */}
-                                                <button
-                                                    onClick={() => setConfirmAction({ type: 'DELETE', user: u, isOpen: true })}
-                                                    className="p-2 hover:bg-slate-800 rounded-lg text-slate-500 hover:text-red-500 transition-colors"
-                                                    title="Disable User"
-                                                >
-                                                    <Trash2 className="w-4 h-4" />
-                                                </button>
+                                                {/* Disable / Enable */}
+                                                {u.disabled ? (
+                                                    <button
+                                                        onClick={() => setConfirmAction({ type: 'ENABLE', user: u, isOpen: true })}
+                                                        className="p-2 hover:bg-slate-800 rounded-lg text-slate-500 hover:text-emerald-500 transition-colors"
+                                                        title="Enable User"
+                                                        aria-label="Enable user"
+                                                    >
+                                                        <CheckCircle2 className="w-4 h-4" />
+                                                    </button>
+                                                ) : (
+                                                    <button
+                                                        onClick={() => setConfirmAction({ type: 'DELETE', user: u, isOpen: true })}
+                                                        className="p-2 hover:bg-slate-800 rounded-lg text-slate-500 hover:text-red-500 transition-colors"
+                                                        title="Disable User"
+                                                        aria-label="Disable user"
+                                                    >
+                                                        <Trash2 className="w-4 h-4" />
+                                                    </button>
+                                                )}
                                                 {/* Edit User */}
                                                 <button
                                                     onClick={() => openEditModal(u)}
                                                     className="p-2 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-white transition-colors"
                                                     title="Edit User"
+                                                    aria-label="Edit user"
                                                 >
                                                     <Pencil className="w-4 h-4" />
                                                 </button>
@@ -751,6 +878,7 @@ const UsersPage: React.FC = () => {
                                                 <button
                                                     onClick={() => setSelectedUser(u)}
                                                     className="p-2 hover:bg-slate-800 rounded-lg text-slate-500 transition-colors"
+                                                    aria-label="View user details"
                                                 >
                                                     <MoreVertical className="w-4 h-4" />
                                                 </button>
@@ -780,7 +908,7 @@ const UsersPage: React.FC = () => {
                     <div className="fixed inset-y-0 right-0 w-full max-w-md bg-slate-900 border-l border-slate-800 z-50 shadow-2xl animate-in slide-in-from-right duration-500 flex flex-col">
                         <div className="p-6 border-b border-slate-800 flex items-center justify-between">
                             <h2 className="text-xl font-bold text-white">User Details</h2>
-                            <button onClick={() => setSelectedUser(null)}>
+                            <button onClick={() => setSelectedUser(null)} aria-label="Close user details panel">
                                 <X className="w-6 h-6 text-slate-400" />
                             </button>
                         </div>
@@ -814,7 +942,7 @@ const UsersPage: React.FC = () => {
                                         className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                                     >
                                         <RefreshCw className="w-4 h-4" />
-                                        Grant New 14-Day Trial
+                                        Grant Trial
                                     </button>
                                 </div>
                             </div>
@@ -852,6 +980,15 @@ const UsersPage: React.FC = () => {
                                                     <span className={cn("px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider border", colors.bg, colors.text, colors.border)}>
                                                         {band}
                                                     </span>
+                                                    {(() => {
+                                                        const confidence = getScoreConfidence(breakdown);
+                                                        const cc = CONFIDENCE_COLORS[confidence];
+                                                        return (
+                                                            <span className={cn("px-2 py-0.5 rounded text-[10px] font-medium border ml-1", cc.bg, cc.text, cc.border)}>
+                                                                {confidence} confidence
+                                                            </span>
+                                                        );
+                                                    })()}
                                                     {breakdown && (
                                                         <div className="space-y-1 mt-2">
                                                             <div className="flex justify-between text-xs">
@@ -894,7 +1031,12 @@ const UsersPage: React.FC = () => {
                                     </div>
                                     <div className="flex items-center justify-between">
                                         <span className="text-sm text-slate-400">Source</span>
-                                        <span className="text-xs text-slate-300 font-mono">{selectedUser.billingSource || '—'}</span>
+                                        <span className="text-xs text-slate-300 font-mono flex items-center gap-1">
+                                            {selectedUser.billingSource || '—'}
+                                            {selectedUser.billingSource === 'stripe' && (
+                                                <Lock className="w-3 h-3 text-slate-500" />
+                                            )}
+                                        </span>
                                     </div>
                                     {selectedUser.billingRef && (
                                         <div className="flex items-center justify-between">
@@ -921,8 +1063,8 @@ const UsersPage: React.FC = () => {
                                                         setMessage({ type: 'success', text: `Billing status set to ${newStatus}` });
                                                         fetchUsers();
                                                         setSelectedUser({ ...selectedUser, billingStatus: newStatus, billingSource: newStatus === 'unknown' ? null : 'manual' });
-                                                    } catch (err: any) {
-                                                        setMessage({ type: 'error', text: err.message || 'Failed to update billing status' });
+                                                    } catch (err: unknown) {
+                                                        setMessage({ type: 'error', text: err instanceof Error ? err.message : 'Failed to update billing status' });
                                                     } finally {
                                                         setBillingOverrideLoading(false);
                                                     }
@@ -942,6 +1084,48 @@ const UsersPage: React.FC = () => {
                                 </div>
                             </div>
 
+                            {/* User Tag */}
+                            <div className="space-y-3">
+                                <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500">User Tag</h4>
+                                <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-4 space-y-3">
+                                    <div className="flex items-center justify-between">
+                                        <span className="text-sm text-slate-400">Classification</span>
+                                        <span className={cn(
+                                            "text-xs font-bold uppercase",
+                                            selectedUser.userTag === 'tester' ? "text-amber-400" :
+                                                selectedUser.userTag === 'friend' ? "text-pink-400" :
+                                                    selectedUser.userTag === 'influencer' ? "text-purple-400" :
+                                                        selectedUser.userTag === 'beta' ? "text-cyan-400" :
+                                                            "text-slate-500"
+                                        )}>
+                                            {selectedUser.userTag || 'none'}
+                                        </span>
+                                    </div>
+                                    <select
+                                        value={selectedUser.userTag || ''}
+                                        onChange={async (e) => {
+                                            const newTag = (e.target.value || null) as UserTag | null;
+                                            try {
+                                                await setUserTag(selectedUser.uid, newTag);
+                                                setMessage({ type: 'success', text: `User tag set to ${newTag || 'none'}` });
+                                                setSelectedUser({ ...selectedUser, userTag: newTag || undefined });
+                                                fetchUsers();
+                                            } catch (err: unknown) {
+                                                setMessage({ type: 'error', text: err instanceof Error ? err.message : 'Failed to set user tag' });
+                                            }
+                                        }}
+                                        className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm focus:ring-2 focus:ring-brand-500/50 focus:outline-none"
+                                    >
+                                        <option value="">None</option>
+                                        <option value="user">User</option>
+                                        <option value="tester">Tester</option>
+                                        <option value="friend">Friend</option>
+                                        <option value="influencer">Influencer</option>
+                                        <option value="beta">Beta</option>
+                                    </select>
+                                </div>
+                            </div>
+
                             {/* Debug Info */}
                             <div className="bg-slate-800 p-4 rounded-xl font-mono text-xs text-slate-400 overflow-x-auto">
                                 <pre>{JSON.stringify({
@@ -950,6 +1134,7 @@ const UsersPage: React.FC = () => {
                                     billingSource: selectedUser.billingSource || null,
                                     billingRef: selectedUser.billingRef || null,
                                     verifiedPaidAt: selectedUser.verifiedPaidAt || null,
+                                    userTag: selectedUser.userTag || null,
                                 }, null, 2)}</pre>
                             </div>
                         </div>
@@ -963,7 +1148,7 @@ const UsersPage: React.FC = () => {
                     <div className="bg-slate-900 border border-slate-800 rounded-3xl p-8 max-w-lg w-full shadow-2xl scale-100 animate-in zoom-in-95 duration-200 max-h-[90vh] overflow-y-auto">
                         <div className="flex items-center justify-between mb-6">
                             <h3 className="text-2xl font-bold text-white">Edit User</h3>
-                            <button onClick={() => { setEditUser(null); setEmailConfirmOpen(false); }}>
+                            <button onClick={() => { setEditUser(null); setEmailConfirmOpen(false); }} aria-label="Close edit modal">
                                 <X className="w-6 h-6 text-slate-400 hover:text-white transition-colors" />
                             </button>
                         </div>
@@ -980,6 +1165,7 @@ const UsersPage: React.FC = () => {
                                             onClick={() => { navigator.clipboard.writeText(editUser.uid); setMessage({ type: 'success', text: 'UID copied' }); }}
                                             className="p-1 hover:bg-slate-700 rounded text-slate-500 hover:text-white transition-colors"
                                             title="Copy UID"
+                                            aria-label="Copy UID to clipboard"
                                         >
                                             <Copy className="w-3 h-3" />
                                         </button>
@@ -1148,15 +1334,36 @@ const UsersPage: React.FC = () => {
             {confirmModal}
 
             {/* Message Toast */}
-            {message && (
+            {(message || undoArchive) && (
                 <div className={cn(
                     "fixed bottom-8 right-8 p-4 rounded-2xl border text-sm flex items-center gap-3 z-[70] animate-in slide-in-from-bottom-4",
-                    message.type === 'success'
-                        ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-200"
-                        : "bg-red-500/10 border-red-500/20 text-red-200"
+                    message?.type === 'error'
+                        ? "bg-red-500/10 border-red-500/20 text-red-200"
+                        : "bg-emerald-500/10 border-emerald-500/20 text-emerald-200"
                 )}>
-                    {message.type === 'success' ? <CheckCircle2 className="w-5 h-5" /> : <AlertTriangle className="w-5 h-5" />}
-                    {message.text}
+                    {message?.type === 'error' ? <AlertTriangle className="w-5 h-5" /> : <CheckCircle2 className="w-5 h-5" />}
+                    <span>{message?.text ?? 'User archived'}</span>
+                    {undoArchive && (
+                        <button
+                            onClick={handleUndoArchive}
+                            className="ml-1 px-2.5 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-white font-semibold text-xs transition-all flex items-center gap-1.5"
+                        >
+                            <ArchiveRestore className="w-3.5 h-3.5" />
+                            Undo
+                        </button>
+                    )}
+                    {undoArchive && (
+                        <button
+                            onClick={() => {
+                                if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
+                                setUndoArchive(null);
+                                setMessage(null);
+                            }}
+                            className="ml-1 text-slate-400 hover:text-white transition-colors"
+                        >
+                            <X className="w-4 h-4" />
+                        </button>
+                    )}
                 </div>
             )}
         </div>

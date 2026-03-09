@@ -1,23 +1,31 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../hooks/useAuth';
 import { useApp } from '../context/AppContext';
-import { getUserSessions } from '../services/firestoreService';
-import type { SessionFilters } from '../services/firestoreService';
+import { getUserSessions, getTesterUsers } from '../services/firestoreService';
+import { useAppSubscribers } from '../hooks/useAppSubscribers';
+import type { SessionFilters, SessionRecord } from '../services/firestoreService';
+import type { QueryDocumentSnapshot } from 'firebase/firestore';
+import type { User } from '../types';
+import { APP_OPTIONS } from '../constants';
 import {
     Activity,
     Search,
     Clock,
-    User,
+    User as UserIcon,
     Calendar,
     Loader2,
-    Info
+    Info,
+    Filter
 } from 'lucide-react';
 import { format } from 'date-fns';
+
+const ACTIVE_NOW_THRESHOLD_SECONDS = 120;
 
 const TesterActivity: React.FC = () => {
     const { appId } = useApp();
     const { isAdmin, loading: authLoading } = useAuth();
-    const [sessions, setSessions] = useState<any[]>([]);
+    const { filterByApp } = useAppSubscribers();
+    const [sessions, setSessions] = useState<SessionRecord[]>([]);
     const [loading, setLoading] = useState(true);
     const [filters, setFilters] = useState<SessionFilters>({
         appId: appId,
@@ -25,14 +33,20 @@ const TesterActivity: React.FC = () => {
         activeOnly: false,
         email: ''
     });
-    const [lastDoc, setLastDoc] = useState<any>(null);
+    const [lastDoc, setLastDoc] = useState<QueryDocumentSnapshot | null>(null);
     const [hasMore, setHasMore] = useState(false);
+
+    // Tester + App filter state
+    const [testers, setTesters] = useState<User[]>([]);
+    const [filterTester, setFilterTester] = useState<string>('all');
+    const [filterApp, setFilterApp] = useState<string>('all');
 
     useEffect(() => {
         if (!authLoading && isAdmin) {
             fetchInitialData();
+            getTesterUsers().then(data => setTesters(filterByApp(data))).catch((err) => console.error('Failed to fetch testers:', err));
         }
-    }, [appId, filters.dateRange, filters.activeOnly, authLoading, isAdmin]);
+    }, [appId, filters.dateRange, filters.activeOnly, authLoading, isAdmin, filterByApp]);
 
     const fetchInitialData = async () => {
         if (!isAdmin) return;
@@ -85,15 +99,27 @@ const TesterActivity: React.FC = () => {
         return `${hours}h ${mins % 60}m`;
     };
 
-    const isActiveNow = (session: any) => {
+    const isActiveNow = (session: SessionRecord) => {
         if (session.logoutAt) return false;
         if (!session.lastSeenAt) return false;
-
-        // Active if lastSeenWithin 2 minutes
         const lastSeen = session.lastSeenAt.toDate();
         const diff = (new Date().getTime() - lastSeen.getTime()) / 1000;
-        return diff < 120;
+        return diff < ACTIVE_NOW_THRESHOLD_SECONDS;
     };
+
+    const testerDisplayName = (u: User): string => {
+        const name = [u.firstName, u.lastName].filter(Boolean).join(' ') || u.displayName || '';
+        return name ? `${name} (${u.email})` : u.email || u.uid;
+    };
+
+    // Derived: client-side filtered sessions, sorted by lastActivity desc (preserve server order)
+    const filteredSessions = useMemo(() => {
+        return sessions.filter(s => {
+            if (filterTester !== 'all' && s.email !== filterTester) return false;
+            if (filterApp !== 'all' && s.app !== filterApp) return false;
+            return true;
+        });
+    }, [sessions, filterTester, filterApp]);
 
     return (
         <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
@@ -105,9 +131,12 @@ const TesterActivity: React.FC = () => {
 
                 <div className="flex items-center gap-3">
                     <div className="bg-slate-900/50 border border-slate-800 rounded-2xl px-6 py-3 flex items-center gap-4">
+                        <Activity className="w-5 h-5 text-slate-400" />
                         <div className="flex flex-col">
                             <span className="text-slate-500 text-xs font-semibold uppercase tracking-wider">Live Sessions</span>
-                            <span className="text-sm text-slate-400">Tracking currently disabled</span>
+                            <span className="text-white font-bold text-lg leading-tight">
+                                {loading ? <Loader2 className="w-4 h-4 animate-spin inline" /> : filteredSessions.filter(s => isActiveNow(s)).length}
+                            </span>
                         </div>
                     </div>
                 </div>
@@ -163,6 +192,38 @@ const TesterActivity: React.FC = () => {
                 </form>
             </div>
 
+            {/* Tester + App dropdowns */}
+            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 flex flex-wrap items-center gap-4">
+                <div className="flex items-center gap-2 text-slate-400 text-sm font-medium">
+                    <Filter className="w-4 h-4" />
+                    <span>Filter:</span>
+                </div>
+
+                <select
+                    value={filterTester}
+                    onChange={(e) => setFilterTester(e.target.value)}
+                    className="bg-slate-950 border border-slate-800 text-slate-300 text-sm rounded-lg focus:ring-brand-500 focus:border-brand-500 p-2.5"
+                >
+                    <option value="all">All Testers</option>
+                    {testers.map(u => (
+                        <option key={u.uid} value={u.email || u.uid}>
+                            {testerDisplayName(u)}
+                        </option>
+                    ))}
+                </select>
+
+                <select
+                    value={filterApp}
+                    onChange={(e) => setFilterApp(e.target.value)}
+                    className="bg-slate-950 border border-slate-800 text-slate-300 text-sm rounded-lg focus:ring-brand-500 focus:border-brand-500 p-2.5"
+                >
+                    <option value="all">All Apps</option>
+                    {APP_OPTIONS.map(opt => (
+                        <option key={opt.value} value={opt.value}>{opt.label}</option>
+                    ))}
+                </select>
+            </div>
+
             {/* Sessions Table */}
             <div className="bg-slate-900 border border-slate-800 rounded-3xl overflow-hidden shadow-2xl relative">
                 {loading && sessions.length === 0 && (
@@ -184,7 +245,7 @@ const TesterActivity: React.FC = () => {
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-800">
-                            {sessions.length === 0 && !loading ? (
+                            {filteredSessions.length === 0 && !loading ? (
                                 <tr>
                                     <td colSpan={6} className="px-6 py-12 text-center">
                                         <div className="flex flex-col items-center gap-4">
@@ -192,19 +253,25 @@ const TesterActivity: React.FC = () => {
                                                 <Activity className="w-8 h-8 text-slate-700" />
                                             </div>
                                             <div>
-                                                <p className="text-slate-300 font-medium">No sessions found</p>
-                                                <p className="text-slate-500 text-sm mt-1">Try changing filters or log into {appId} to generate data.</p>
+                                                {(filterTester !== 'all' || filterApp !== 'all') ? (
+                                                    <p className="text-slate-300 font-medium">No activity found for selected filters.</p>
+                                                ) : (
+                                                    <>
+                                                        <p className="text-slate-300 font-medium">No sessions found</p>
+                                                        <p className="text-slate-500 text-sm mt-1">Try changing filters or log into {appId} to generate data.</p>
+                                                    </>
+                                                )}
                                             </div>
                                         </div>
                                     </td>
                                 </tr>
                             ) : (
-                                sessions.map((session) => (
+                                filteredSessions.map((session) => (
                                     <tr key={session.id} className="hover:bg-slate-800/30 transition-colors group">
                                         <td className="px-6 py-5">
                                             <div className="flex items-center gap-4">
                                                 <div className="w-10 h-10 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-center group-hover:border-brand-500/30 transition-colors">
-                                                    <User className="w-5 h-5 text-slate-400 group-hover:text-brand-400" />
+                                                    <UserIcon className="w-5 h-5 text-slate-400 group-hover:text-brand-400" />
                                                 </div>
                                                 <div className="flex flex-col">
                                                     <span className="font-semibold text-white truncate max-w-[200px]">{session.email || 'Anonymous'}</span>

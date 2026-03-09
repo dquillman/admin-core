@@ -2,10 +2,12 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { Loader2, AlertTriangle, ShieldAlert, Clock, Archive } from 'lucide-react';
 import type { ReportedIssue } from '../types';
 import { subscribeToReportedIssues, fetchAllUsersLookup } from '../services/firestoreService';
+import { useAppSubscribers } from '../hooks/useAppSubscribers';
 import { buildOperatorReport, type ReportIssueItem } from '../selectors/operatorReport';
 import { IssueDetailModal } from '../components/IssueDetailModal';
 
 const OperatorReport: React.FC = () => {
+    const { filterByUid } = useAppSubscribers();
     const [issues, setIssues] = useState<ReportedIssue[]>([]);
     const [loading, setLoading] = useState(true);
     const [users, setUsers] = useState<{ uid: string; email: string }[]>([]);
@@ -22,9 +24,9 @@ const OperatorReport: React.FC = () => {
 
     useEffect(() => {
         fetchAllUsersLookup()
-            .then(setUsers)
+            .then(data => setUsers(filterByUid(data)))
             .catch((err) => console.error('Failed to fetch users lookup:', err));
-    }, []);
+    }, [filterByUid]);
 
     const userMap = useMemo(() => new Map(users.map(u => [u.uid, u.email])), [users]);
 

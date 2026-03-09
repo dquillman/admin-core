@@ -1,4 +1,5 @@
 import { Timestamp } from 'firebase/firestore';
+import type { User } from '../types';
 
 export type AccessType = 'tester' | 'tester_invalid' | 'trial' | 'paid' | 'none';
 
@@ -8,7 +9,7 @@ export interface AccessState {
     endsAt?: Timestamp | null;
 }
 
-export const getEffectiveAccess = (user: any): AccessState => {
+export const getEffectiveAccess = (user: User): AccessState => {
     const now = Timestamp.now();
 
     // 1. Tester Logic

@@ -13,7 +13,8 @@ async function assertAdmin(context: functions.https.CallableContext) {
         throw new functions.https.HttpsError("unauthenticated", "Must be logged in");
     }
     const callerDoc = await db.collection("users").doc(context.auth.uid).get();
-    if (callerDoc.data()?.role !== "admin") {
+    const role = callerDoc.data()?.role;
+    if (role !== "admin" && role !== "super-admin") {
         throw new functions.https.HttpsError("permission-denied", "Must be an admin");
     }
 }
@@ -52,6 +53,7 @@ export const grantTesterPro = functions.https.onCall(async (data, context) => {
     if (!targetDoc.exists) throw new functions.https.HttpsError("not-found", "User not found");
 
     const prevState = targetDoc.data();
+    const isStripePaid = prevState?.billingSource === 'stripe';
 
     await targetRef.update({
         testerOverride: true,
@@ -59,8 +61,10 @@ export const grantTesterPro = functions.https.onCall(async (data, context) => {
         testerGrantedBy: context.auth?.uid,
         testerGrantedAt: admin.firestore.FieldValue.serverTimestamp(),
         isPro: true,
-        billingStatus: 'tester',
-        billingSource: 'manual',
+        ...(isStripePaid ? {} : {
+            billingStatus: 'tester',
+            billingSource: 'manual',
+        }),
     });
 
     await db.collection("admin_audit").add({
@@ -100,6 +104,8 @@ export const revokeTesterPro = functions.https.onCall(async (data, context) => {
     const revokeUpdates: Record<string, any> = {
         testerOverride: false,
         testerExpiresAt: null,
+        testerGrantedAt: null,
+        testerGrantedBy: null,
         isPro: false,
     };
 
@@ -228,11 +234,40 @@ export const adminUpdateUserEmail = functions.https.onCall(async (data, context)
     // 1. Update Firebase Auth
     await admin.auth().updateUser(targetUid, { email: newEmail });
 
-    // 2. Update Firestore
-    await targetRef.update({
-        email: newEmail,
-        updatedAt: admin.firestore.FieldValue.serverTimestamp()
-    });
+    // 2. Update Firestore (with rollback on failure)
+    try {
+        await targetRef.update({
+            email: newEmail,
+            updatedAt: admin.firestore.FieldValue.serverTimestamp()
+        });
+    } catch (firestoreErr) {
+        // Rollback Auth change
+        let rollbackSucceeded = false;
+        try {
+            await admin.auth().updateUser(targetUid, { email: prevEmail });
+            rollbackSucceeded = true;
+        } catch (rollbackErr) {
+            console.error("CRITICAL: Failed to rollback Auth email change", rollbackErr);
+        }
+
+        // Log the failed attempt
+        await db.collection("admin_audit").add({
+            action: "ADMIN_UPDATE_EMAIL_FAILED",
+            adminUid: context.auth?.uid,
+            targetUserId: targetUid,
+            prevEmail,
+            attemptedEmail: newEmail,
+            rollbackSucceeded,
+            error: firestoreErr instanceof Error ? firestoreErr.message : 'Unknown error',
+            createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        }).catch(() => {}); // Don't let audit failure mask the real error
+
+        if (rollbackSucceeded) {
+            throw new functions.https.HttpsError("internal", "Failed to update user record. Auth email change has been reverted.");
+        } else {
+            throw new functions.https.HttpsError("internal", "Failed to update user record AND failed to revert Auth email. Manual intervention required. Auth has new email, Firestore has old email.");
+        }
+    }
 
     // 3. Audit log
     await db.collection("admin_audit").add({

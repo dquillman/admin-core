@@ -4,6 +4,7 @@ import { auth } from '../firebase';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { Lock, Mail } from 'lucide-react';
+import { ADMIN_CORE_VERSION } from '../config';
 
 const Login: React.FC = () => {
     const { user, loading: authLoading } = useAuth();
@@ -33,9 +34,9 @@ const Login: React.FC = () => {
         try {
             await signInWithEmailAndPassword(auth, email, password);
             navigate(from, { replace: true });
-        } catch (err: any) {
+        } catch (err: unknown) {
             console.error("Login error:", err);
-            setError(err.message || "Failed to sign in.");
+            setError(err instanceof Error ? err.message : "Failed to sign in.");
             setLoading(false);
         }
     };
@@ -48,9 +49,9 @@ const Login: React.FC = () => {
             const provider = new GoogleAuthProvider();
             await signInWithPopup(auth, provider);
             // navigate is handled by the useEffect observer
-        } catch (err: any) {
+        } catch (err: unknown) {
             console.error("Popup Error:", err);
-            setError(err.message);
+            setError(err instanceof Error ? err.message : "Failed to sign in.");
             setLoading(false);
         }
     };
@@ -132,7 +133,7 @@ const Login: React.FC = () => {
                         </button>
                     </form>
                 </div>
-                <p className="text-center text-slate-600 text-[10px] mt-8 tracking-widest uppercase">Admin Management Console v1.0</p>
+                <p className="text-center text-slate-600 text-[10px] mt-8 tracking-widest uppercase">Admin Management Console v{ADMIN_CORE_VERSION}</p>
             </div>
         </div>
     );

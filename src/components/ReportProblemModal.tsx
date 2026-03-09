@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { X, AlertCircle, Loader2 } from 'lucide-react';
 import { createIssue } from '../services/firestoreService';
+import { getTelemetryFields } from '../utils/uaParser';
 import { APP_OPTIONS } from '../constants';
 import type { AppKey } from '../constants';
 
@@ -10,6 +11,7 @@ interface ReportProblemModalProps {
 }
 
 export const ReportProblemModal: React.FC<ReportProblemModalProps> = ({ isOpen, onClose }) => {
+    const modalRef = useRef<HTMLDivElement>(null);
     const [app, setApp] = useState(APP_OPTIONS[0].value);
     const [title, setTitle] = useState('');
     const [description, setDescription] = useState('');
@@ -31,6 +33,7 @@ export const ReportProblemModal: React.FC<ReportProblemModalProps> = ({ isOpen, 
                 app,
                 title: title.trim(),
                 description: description.trim() || undefined,
+                telemetry: getTelemetryFields(),
             });
 
             // Reset and close
@@ -46,6 +49,20 @@ export const ReportProblemModal: React.FC<ReportProblemModalProps> = ({ isOpen, 
         }
     };
 
+    // Focus modal on open
+    useEffect(() => {
+        if (isOpen) {
+            modalRef.current?.focus();
+        }
+    }, [isOpen]);
+
+    // Close on Escape key
+    const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
+        if (e.key === 'Escape') {
+            onClose();
+        }
+    }, [onClose]);
+
     if (!isOpen) return null;
 
     const selectedApp = APP_OPTIONS.find(a => a.value === app);
@@ -59,7 +76,7 @@ export const ReportProblemModal: React.FC<ReportProblemModalProps> = ({ isOpen, 
             />
 
             {/* Modal */}
-            <div className="relative bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl w-full max-w-md mx-4">
+            <div ref={modalRef} tabIndex={-1} onKeyDown={handleKeyDown} className="relative bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl w-full max-w-md mx-4 outline-none">
                 {/* Header */}
                 <div className="flex items-center justify-between p-4 border-b border-slate-800">
                     <div className="flex items-center gap-2">

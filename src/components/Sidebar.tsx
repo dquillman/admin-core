@@ -8,6 +8,7 @@ import {
     ShieldCheck,
     CreditCard,
     Activity,
+    BarChart2,
     Rocket,
     Megaphone,
     Filter,
@@ -15,9 +16,29 @@ import {
     AlertCircle,
     ClipboardCheck,
     Tag,
-    BookOpen
+    BookOpen,
+    ListChecks,
+    Code2,
+    Receipt,
+    History,
+    Scale,
+    AlertOctagon,
+    ClipboardList,
+    DollarSign,
+    TrendingDown,
+    TrendingUp,
+    Settings,
+    Bell,
+    UserX,
+    Gamepad2,
+    Layers,
+    Trophy,
+    Sparkles,
+    GitBranch,
+    Lock,
 } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
+import { useApp } from '../context/AppContext';
 import { AppSelector } from './AppSelector';
 import { clsx, type ClassValue } from 'clsx';
 import { ADMIN_CORE_VERSION } from '../config';
@@ -32,6 +53,7 @@ function cn(...inputs: ClassValue[]) {
 
 const Sidebar: React.FC = () => {
     const state = useAuth();
+    const { appId } = useApp();
 
     const navItems = [
         { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
@@ -40,6 +62,7 @@ const Sidebar: React.FC = () => {
         { to: '/operator-report', icon: ClipboardCheck, label: 'Operator Report' },
         { to: '/broadcast', icon: Megaphone, label: 'Broadcast' },
         { to: '/tester-activity', icon: Activity, label: 'Tester Activity' },
+        { to: '/usage-dashboard', icon: BarChart2, label: 'Usage Dashboard' },
         { to: '/plans', icon: CreditCard, label: 'Plans & Trials' },
         { to: '/sources', icon: Globe, label: 'Sources' },
         { to: '/marketing-assets', icon: Rocket, label: 'Marketing Assets' },
@@ -48,8 +71,42 @@ const Sidebar: React.FC = () => {
         { to: '/funnel', icon: Filter, label: 'Funnel' },
         { to: '/tutor-impact', icon: CheckCircle2, label: 'Tutor Impact' },
         ...(state.isAdmin ? [{ to: '/exams', icon: BookOpen, label: 'Exams' }] : []),
-        ...(state.isAdmin ? [{ to: '/categories', icon: Filter, label: 'Issue Categories' }] : []),
+        ...(state.isAdmin ? [{ to: '/categories', icon: Layers, label: 'Issue Categories' }] : []),
         ...(state.isAdmin ? [{ to: '/versions', icon: Tag, label: 'Release Versions' }] : []),
+        ...(state.isAdmin ? [{ to: '/release-readiness', icon: ClipboardList, label: 'Release Readiness' }] : []),
+        ...(appId === 'onboard-kit' ? [
+            { to: '/onboarding', icon: ListChecks, label: 'Flows' },
+            { to: '/onboarding/analytics', icon: BarChart2, label: 'Analytics' },
+            { to: '/onboarding/sdk-setup', icon: Code2, label: 'SDK Setup' },
+        ] : []),
+        ...(appId === 'game-forge' ? [
+            { to: '/game-forge', icon: Gamepad2, label: 'Dashboard' },
+            { to: '/game-forge/games', icon: Layers, label: 'Games' },
+            { to: '/game-forge/players', icon: Users, label: 'Players' },
+            { to: '/game-forge/leaderboards', icon: Trophy, label: 'Leaderboards' },
+            { to: '/game-forge/analytics', icon: BarChart2, label: 'Analytics' },
+            { to: '/game-forge/subscriptions', icon: CreditCard, label: 'Subscriptions' },
+            { to: '/game-forge/payments', icon: DollarSign, label: 'Payments' },
+            { to: '/game-forge/notifications', icon: Bell, label: 'Notifications' },
+            { to: '/game-forge/ai', icon: Sparkles, label: 'AI Insights' },
+            { to: '/game-forge/workflows', icon: GitBranch, label: 'Workflows' },
+        ] : []),
+        // Billing & Revenue (admin-gated)
+        ...(state.isAdmin ? [
+            { to: '/billing-history', icon: Receipt, label: 'Billing History' },
+            { to: '/unresolved-billing', icon: AlertOctagon, label: 'Unresolved Events' },
+            { to: '/revenue', icon: DollarSign, label: 'Revenue Dashboard' },
+            { to: '/billing-alerts', icon: Bell, label: 'Billing Alerts' },
+            { to: '/usage-billing', icon: Scale, label: 'Usage vs Billing' },
+            { to: '/inactive-paid', icon: UserX, label: 'Inactive Paid' },
+        ] : []),
+        // Analytics & Tester Insights (admin-gated)
+        ...(state.isAdmin ? [
+            { to: '/usage-config', icon: Settings, label: 'Usage Config' },
+            { to: '/tester-funnel', icon: TrendingDown, label: 'Tester Funnel' },
+            { to: '/tester-conversion', icon: TrendingUp, label: 'Tester Conversion' },
+            { to: '/audit-timeline', icon: History, label: 'Audit Timeline' },
+        ] : []),
     ];
 
     return (
@@ -80,7 +137,13 @@ const Sidebar: React.FC = () => {
                     >
                         <item.icon className="w-5 h-5 shrink-0" />
                         <span className="font-medium">{item.label}</span>
-                        {(item.to === '/testers' || item.to === '/tester-activity') && (
+                        {'superAdmin' in item && item.superAdmin && state.isSuperAdmin && (
+                            <Lock
+                                className="ml-auto w-3 h-3 text-amber-500/60 shrink-0 cursor-help"
+                                title="Some features on this page require super-admin privileges"
+                            />
+                        )}
+                        {(item.to === '/tester-activity') && (
                             <span
                                 className="ml-auto text-[10px] bg-blue-500/10 text-blue-400 border border-blue-500/20 px-1.5 py-0.5 rounded-full font-mono uppercase cursor-help"
                                 title="This area is in beta. Features may change during testing."
@@ -96,7 +159,6 @@ const Sidebar: React.FC = () => {
             <div className="p-4 border-t border-slate-800">
                 <div className="bg-slate-800/50 rounded-2xl p-4 mb-4 border border-slate-800/50">
                     <div className="flex items-center gap-3">
-// ...
                         <div className="w-10 h-10 bg-slate-700 rounded-full flex items-center justify-center border border-slate-600 overflow-hidden">
                             {state.user?.photoURL ? (
                                 <img src={state.user.photoURL} alt="pfp" className="w-full h-full object-cover" />
@@ -106,9 +168,12 @@ const Sidebar: React.FC = () => {
                         </div>
                         <div className="flex-1 min-w-0">
                             <p className="text-sm font-bold text-white truncate">{state.user?.email?.split('@')[0]}</p>
-                            <div className="flex items-center gap-1 text-[10px] text-brand-400 font-bold uppercase tracking-wider">
+                            <div className={cn(
+                                "flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider",
+                                state.isSuperAdmin ? "text-amber-400" : "text-brand-400"
+                            )}>
                                 <ShieldCheck className="w-3 h-3" />
-                                Admin
+                                {state.isSuperAdmin ? 'Super Admin' : 'Admin'}
                             </div>
                         </div>
                     </div>
@@ -123,9 +188,12 @@ const Sidebar: React.FC = () => {
                 </button>
                 <div className="mt-4 text-center space-y-1">
                     <div className="text-xs text-slate-600 font-mono">Admin Core v{ADMIN_CORE_VERSION}</div>
-                    <div className="inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-amber-500/70">
-                        <span className="w-1.5 h-1.5 rounded-full bg-amber-500/70"></span>
-                        admin
+                    <div className={cn(
+                        "inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider",
+                        state.isSuperAdmin ? "text-amber-400/70" : "text-amber-500/70"
+                    )}>
+                        <span className={cn("w-1.5 h-1.5 rounded-full", state.isSuperAdmin ? "bg-amber-400/70" : "bg-amber-500/70")}></span>
+                        {state.isSuperAdmin ? 'super-admin' : 'admin'}
                     </div>
                 </div>
             </div>

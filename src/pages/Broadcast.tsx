@@ -92,7 +92,7 @@ const Broadcast = () => {
                 success: true,
                 message: "Draft saved successfully. No emails were sent."
             });
-        } catch (err: any) {
+        } catch (err: unknown) {
             console.error(err);
             setResult({ success: false, message: 'Failed to save draft.' });
         } finally {
