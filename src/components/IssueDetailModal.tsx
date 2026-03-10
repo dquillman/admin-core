@@ -5,7 +5,7 @@ import { ISSUE_STATUS, ISSUE_STATUS_OPTIONS, ISSUE_PLATFORMS, normalizeAppValue 
 import { updateIssueStatus, updateIssueDetails, addIssueNote, deleteIssue, subscribeToIssueCategories, subscribeToReleaseVersions, updateIssuePFV, updateIssueRIV, fetchAllUsersLookup } from '../services/firestoreService';
 import { useAuth } from '../hooks/useAuth';
 
-const sanitizeUrl = (url: string | undefined): string | undefined => {
+const sanitizeUrl = (url: string | null | undefined): string | undefined => {
     if (!url) return undefined;
     if (url.startsWith('http://') || url.startsWith('https://')) return url;
     return undefined; // reject non-http/https URLs entirely
@@ -86,10 +86,10 @@ export const IssueDetailModal: React.FC<IssueDetailModalProps> = ({ issue, onClo
 
     const userMap = new Map(users.map(u => [u.uid, u.email]));
 
-    const formatDate = (val: { toDate?: () => Date } | Date | string | number | null | undefined): string => {
+    const formatDate = (val: unknown): string => {
         try {
             if (!val) return 'N/A';
-            if (typeof val.toDate === 'function') return val.toDate().toLocaleString();
+            if (typeof val === 'object' && val !== null && 'toDate' in val && typeof (val as { toDate: () => Date }).toDate === 'function') return (val as { toDate: () => Date }).toDate().toLocaleString();
             if (val instanceof Date) return val.toLocaleString();
             return String(val);
         } catch {
@@ -115,7 +115,7 @@ export const IssueDetailModal: React.FC<IssueDetailModalProps> = ({ issue, onClo
         // Rule: PFV must be set before moving to resolved/released/closed
         if (
             updates.status &&
-            TERMINAL_STATUSES.includes(updates.status) &&
+            TERMINAL_STATUSES.includes(updates.status as typeof TERMINAL_STATUSES[number]) &&
             !localIssue?.plannedForVersion
         ) {
             const msg = 'Planned for Version (PFV) must be set before marking an issue as resolved, released, or closed.';

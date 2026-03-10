@@ -70,15 +70,15 @@ const UsageConfigPage: React.FC = () => {
                 const config = await getUsageScoringConfig();
                 if (!cancelled && config) {
                     setForm({
-                        windowDays: config.windowDays ?? DEFAULTS.windowDays,
-                        activeDayPoints: config.activeDayPoints ?? DEFAULTS.activeDayPoints,
-                        coreActionPoints: config.coreActionPoints ?? DEFAULTS.coreActionPoints,
-                        completionPoints: config.completionPoints ?? DEFAULTS.completionPoints,
-                        scoreCap: config.scoreCap ?? DEFAULTS.scoreCap,
-                        bandPowerUser: config.bandPowerUser ?? DEFAULTS.bandPowerUser,
-                        bandActive: config.bandActive ?? DEFAULTS.bandActive,
-                        bandEngaged: config.bandEngaged ?? DEFAULTS.bandEngaged,
-                        bandCurious: config.bandCurious ?? DEFAULTS.bandCurious,
+                        windowDays: (config.windowDays as number) ?? DEFAULTS.windowDays,
+                        activeDayPoints: (config.activeDayPoints as number) ?? DEFAULTS.activeDayPoints,
+                        coreActionPoints: (config.coreActionPoints as number) ?? DEFAULTS.coreActionPoints,
+                        completionPoints: (config.completionPoints as number) ?? DEFAULTS.completionPoints,
+                        scoreCap: (config.scoreCap as number) ?? DEFAULTS.scoreCap,
+                        bandPowerUser: (config.bandPowerUser as number) ?? DEFAULTS.bandPowerUser,
+                        bandActive: (config.bandActive as number) ?? DEFAULTS.bandActive,
+                        bandEngaged: (config.bandEngaged as number) ?? DEFAULTS.bandEngaged,
+                        bandCurious: (config.bandCurious as number) ?? DEFAULTS.bandCurious,
                     });
                 }
             } catch (err: unknown) {
@@ -102,7 +102,7 @@ const UsageConfigPage: React.FC = () => {
         setSuccess(null);
         setError(null);
         try {
-            await updateUsageScoringConfig(form);
+            await updateUsageScoringConfig(form as unknown as Record<string, unknown>);
             setSuccess('Configuration saved successfully.');
         } catch (err: unknown) {
             setError('Failed to save config: ' + (err instanceof Error ? err.message : 'Unknown error'));

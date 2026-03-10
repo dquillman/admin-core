@@ -19,8 +19,10 @@ const Broadcast = () => {
         body: string;
         audience: 'testers' | 'all';
         status: string;
-        createdAt: unknown;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        createdAt: any;
         createdBy?: string;
+        creatorEmail?: string;
     }
     const [drafts, setDrafts] = useState<BroadcastDraft[]>([]);
     const [loadedDraft, setLoadedDraft] = useState<BroadcastDraft | null>(null);

@@ -103,7 +103,7 @@ const TesterActivity: React.FC = () => {
     const isActiveNow = (session: SessionRecord) => {
         if (session.logoutAt) return false;
         if (!session.lastSeenAt) return false;
-        const lastSeen = session.lastSeenAt.toDate();
+        const lastSeen = (session.lastSeenAt as { toDate(): Date }).toDate();
         const diff = (new Date().getTime() - lastSeen.getTime()) / 1000;
         return diff < ACTIVE_NOW_THRESHOLD_SECONDS;
     };
@@ -275,45 +275,45 @@ const TesterActivity: React.FC = () => {
                                                     <UserIcon className="w-5 h-5 text-slate-400 group-hover:text-brand-400" />
                                                 </div>
                                                 <div className="flex flex-col">
-                                                    <span className="font-semibold text-white truncate max-w-[200px]">{session.email || 'Anonymous'}</span>
-                                                    <span className="text-xs text-slate-500 font-mono">{session.userId?.slice(0, 8)}...</span>
+                                                    <span className="font-semibold text-white truncate max-w-[200px]">{(session.email as string) || 'Anonymous'}</span>
+                                                    <span className="text-xs text-slate-500 font-mono">{(session.userId as string | undefined)?.slice(0, 8)}...</span>
                                                 </div>
                                             </div>
                                         </td>
                                         <td className="px-6 py-5">
                                             <span className="px-3 py-1 bg-slate-950 border border-slate-800 rounded-lg text-xs font-bold text-slate-400 uppercase tracking-wider">
-                                                {session.app}
+                                                {session.app as string}
                                             </span>
                                         </td>
                                         <td className="px-6 py-5">
                                             <div className="flex flex-col gap-1">
                                                 <div className="flex items-center gap-2 text-sm text-slate-300">
                                                     <Calendar className="w-3.5 h-3.5 text-slate-500" />
-                                                    {format(session.loginAt.toDate(), 'MMM d, HH:mm')}
+                                                    {format((session.loginAt as { toDate(): Date }).toDate(), 'MMM d, HH:mm')}
                                                 </div>
-                                                {session.lastSeenAt && (
+                                                {session.lastSeenAt ? (
                                                     <div className="flex items-center gap-2 text-xs text-slate-500">
                                                         <Clock className="w-3.5 h-3.5" />
-                                                        Last: {format(session.lastSeenAt.toDate(), 'HH:mm:ss')}
+                                                        Last: {format((session.lastSeenAt as { toDate(): Date }).toDate(), 'HH:mm:ss')}
                                                     </div>
-                                                )}
+                                                ) : null}
                                             </div>
                                         </td>
                                         <td className="px-6 py-5">
                                             <div className="flex flex-col gap-1">
                                                 <div className="text-sm text-slate-300">
-                                                    {session.logoutAt ? format(session.logoutAt.toDate(), 'MMM d, HH:mm') : '-'}
+                                                    {session.logoutAt ? format((session.logoutAt as { toDate(): Date }).toDate(), 'MMM d, HH:mm') : '-'}
                                                 </div>
-                                                {session.endedBy && (
+                                                {session.endedBy ? (
                                                     <div className={`text-[10px] font-bold uppercase tracking-tight py-0.5 px-2 rounded-md w-fit ${session.endedBy === 'logout' ? 'text-slate-400 bg-slate-950' : 'text-amber-500 bg-amber-500/10'
                                                         }`}>
-                                                        {session.endedBy}
+                                                        {session.endedBy as string}
                                                     </div>
-                                                )}
+                                                ) : null}
                                             </div>
                                         </td>
                                         <td className="px-6 py-5 text-sm font-mono text-slate-400">
-                                            {formatDuration(session.durationSec)}
+                                            {formatDuration(session.durationSec as number | null)}
                                         </td>
                                         <td className="px-6 py-5">
                                             <div className="flex justify-center">

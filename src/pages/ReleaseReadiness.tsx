@@ -128,7 +128,7 @@ const ReleaseReadiness: React.FC = () => {
         }
         // Append any statuses not in the known order (e.g. 'unknown')
         for (const key of Object.keys(groups)) {
-            if (!STATUS_GROUP_ORDER.includes(key)) {
+            if (!(STATUS_GROUP_ORDER as readonly string[]).includes(key)) {
                 ordered.push([key, groups[key]]);
             }
         }

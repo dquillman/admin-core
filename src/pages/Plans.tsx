@@ -19,7 +19,8 @@ const PlansPage: React.FC = () => {
     const { isAdmin, loading: authLoading } = useAuth(); // Auth gating check
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
-    const [config, setConfig] = useState<Record<string, unknown>>({
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const [config, setConfig] = useState<Record<string, any>>({
         trialDays: 7,
         trialHasFullProAccess: true,
         planLimits: {

@@ -294,12 +294,12 @@ const BillingAlerts: React.FC = () => {
                                     <div className="flex justify-between px-4 py-3">
                                         <span className="text-xs text-slate-500 uppercase tracking-wide">Access</span>
                                         <span className={`text-sm font-medium ${
-                                            access === 'tester' ? 'text-purple-400' :
-                                            access === 'trial' ? 'text-amber-400' :
-                                            access === 'paid' ? 'text-emerald-400' :
+                                            access.type === 'tester' ? 'text-purple-400' :
+                                            access.type === 'trial' ? 'text-amber-400' :
+                                            access.type === 'paid' ? 'text-emerald-400' :
                                             'text-slate-400'
                                         }`}>
-                                            {access.charAt(0).toUpperCase() + access.slice(1)}
+                                            {access.label}
                                         </span>
                                     </div>
                                     <div className="flex justify-between px-4 py-3">
@@ -324,7 +324,7 @@ const BillingAlerts: React.FC = () => {
                                     <div className="flex justify-between px-4 py-3">
                                         <span className="text-xs text-slate-500 uppercase tracking-wide">Usage Score</span>
                                         {u.usageScore != null ? (
-                                            <span className="text-sm font-medium" style={bandColor ? { color: bandColor } : undefined}>
+                                            <span className={`text-sm font-medium ${bandColor ? bandColor.text : ''}`}>
                                                 {u.usageScore} ({band})
                                             </span>
                                         ) : (

@@ -231,7 +231,8 @@ const TesterConversion: React.FC = () => {
 
         const conversionEvents = auditEntries.filter(e => {
             if (e.action !== 'SET_BILLING_STATUS') return false;
-            const newStatus = e.metadata?.newStatus ?? e.metadata?.new?.billingStatus;
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const newStatus = (e.metadata as Record<string, any> | undefined)?.newStatus ?? (e.metadata?.new as Record<string, any> | undefined)?.billingStatus;
             if (newStatus !== 'paid') return false;
             const uid = e.targetUserId;
             if (!uid) return false;

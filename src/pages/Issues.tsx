@@ -27,7 +27,7 @@ import {
 } from 'lucide-react';
 import { ImportIssuesModal } from '../components/ImportIssuesModal';
 
-const sanitizeUrl = (url: string | undefined): string | undefined => {
+const sanitizeUrl = (url: string | null | undefined): string | undefined => {
     if (!url) return undefined;
     if (url.startsWith('http://') || url.startsWith('https://')) return url;
     return undefined; // reject non-http/https URLs entirely
@@ -214,10 +214,10 @@ const Issues: React.FC = () => {
             .catch((err) => console.error('Failed to fetch users lookup:', err));
     }, [filterByUid]);
 
-    const formatDate = (val: { toDate?: () => Date } | Date | string | number | null | undefined): string => {
+    const formatDate = (val: unknown): string => {
         try {
             if (!val) return 'N/A';
-            if (typeof val.toDate === 'function') return val.toDate().toLocaleDateString();
+            if (typeof val === 'object' && val !== null && 'toDate' in val && typeof (val as { toDate: () => Date }).toDate === 'function') return (val as { toDate: () => Date }).toDate().toLocaleDateString();
             if (val instanceof Date) return val.toLocaleDateString();
             return String(val); // Fallback for strings/numbers
         } catch {

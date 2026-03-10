@@ -47,7 +47,7 @@ export default function StepEditor({ step, onChange, onDelete }: StepEditorProps
                         <label className="block text-xs font-bold text-slate-400 mb-1.5">Heading</label>
                         <input
                             type="text"
-                            value={step.config.heading || ''}
+                            value={(step.config.heading as string) || ''}
                             onChange={e => update('heading', e.target.value)}
                             className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-white text-sm focus:outline-none focus:border-brand-500/50"
                             placeholder="Welcome aboard!"
@@ -56,7 +56,7 @@ export default function StepEditor({ step, onChange, onDelete }: StepEditorProps
                     <div>
                         <label className="block text-xs font-bold text-slate-400 mb-1.5">Message</label>
                         <textarea
-                            value={step.config.message || ''}
+                            value={(step.config.message as string) || ''}
                             onChange={e => update('message', e.target.value)}
                             className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-white text-sm focus:outline-none focus:border-brand-500/50 resize-none"
                             rows={3}
@@ -67,7 +67,7 @@ export default function StepEditor({ step, onChange, onDelete }: StepEditorProps
                         <label className="block text-xs font-bold text-slate-400 mb-1.5">Button Text</label>
                         <input
                             type="text"
-                            value={step.config.buttonText || ''}
+                            value={(step.config.buttonText as string) || ''}
                             onChange={e => update('buttonText', e.target.value)}
                             className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-white text-sm focus:outline-none focus:border-brand-500/50"
                             placeholder="Get Started"
@@ -81,7 +81,7 @@ export default function StepEditor({ step, onChange, onDelete }: StepEditorProps
                     <div>
                         <label className="block text-xs font-bold text-slate-400 mb-1.5">Fields (one per line, format: label|type)</label>
                         <textarea
-                            value={step.config.fieldsRaw || ''}
+                            value={(step.config.fieldsRaw as string) || ''}
                             onChange={e => update('fieldsRaw', e.target.value)}
                             className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-white text-sm font-mono focus:outline-none focus:border-brand-500/50 resize-none"
                             rows={4}
@@ -92,7 +92,7 @@ export default function StepEditor({ step, onChange, onDelete }: StepEditorProps
                         <label className="block text-xs font-bold text-slate-400 mb-1.5">Submit Button Text</label>
                         <input
                             type="text"
-                            value={step.config.submitText || ''}
+                            value={(step.config.submitText as string) || ''}
                             onChange={e => update('submitText', e.target.value)}
                             className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-white text-sm focus:outline-none focus:border-brand-500/50"
                             placeholder="Continue"
@@ -105,7 +105,7 @@ export default function StepEditor({ step, onChange, onDelete }: StepEditorProps
                 <div>
                     <label className="block text-xs font-bold text-slate-400 mb-1.5">Checklist Items (one per line)</label>
                     <textarea
-                        value={step.config.itemsRaw || ''}
+                        value={(step.config.itemsRaw as string) || ''}
                         onChange={e => update('itemsRaw', e.target.value)}
                         className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-white text-sm font-mono focus:outline-none focus:border-brand-500/50 resize-none"
                         rows={5}
@@ -120,7 +120,7 @@ export default function StepEditor({ step, onChange, onDelete }: StepEditorProps
                         <label className="block text-xs font-bold text-slate-400 mb-1.5">Video URL</label>
                         <input
                             type="url"
-                            value={step.config.videoUrl || ''}
+                            value={(step.config.videoUrl as string) || ''}
                             onChange={e => update('videoUrl', e.target.value)}
                             className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-white text-sm focus:outline-none focus:border-brand-500/50"
                             placeholder="https://www.youtube.com/embed/..."
@@ -130,7 +130,7 @@ export default function StepEditor({ step, onChange, onDelete }: StepEditorProps
                         <label className="block text-xs font-bold text-slate-400 mb-1.5">Caption</label>
                         <input
                             type="text"
-                            value={step.config.caption || ''}
+                            value={(step.config.caption as string) || ''}
                             onChange={e => update('caption', e.target.value)}
                             className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-white text-sm focus:outline-none focus:border-brand-500/50"
                             placeholder="Watch this 2-minute intro"
@@ -145,7 +145,7 @@ export default function StepEditor({ step, onChange, onDelete }: StepEditorProps
                         <label className="block text-xs font-bold text-slate-400 mb-1.5">Redirect URL</label>
                         <input
                             type="url"
-                            value={step.config.url || ''}
+                            value={(step.config.url as string) || ''}
                             onChange={e => update('url', e.target.value)}
                             className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-white text-sm focus:outline-none focus:border-brand-500/50"
                             placeholder="https://app.example.com/dashboard"
@@ -155,7 +155,7 @@ export default function StepEditor({ step, onChange, onDelete }: StepEditorProps
                         <label className="block text-xs font-bold text-slate-400 mb-1.5">Delay (seconds)</label>
                         <input
                             type="number"
-                            value={step.config.delay ?? 3}
+                            value={(step.config.delay as number) ?? 3}
                             onChange={e => update('delay', parseInt(e.target.value) || 0)}
                             className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-white text-sm focus:outline-none focus:border-brand-500/50"
                             min={0}
@@ -166,7 +166,7 @@ export default function StepEditor({ step, onChange, onDelete }: StepEditorProps
                         <label className="block text-xs font-bold text-slate-400 mb-1.5">Message</label>
                         <input
                             type="text"
-                            value={step.config.message || ''}
+                            value={(step.config.message as string) || ''}
                             onChange={e => update('message', e.target.value)}
                             className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-white text-sm focus:outline-none focus:border-brand-500/50"
                             placeholder="You're all set! Redirecting..."

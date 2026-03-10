@@ -62,7 +62,7 @@ export interface AdminStats {
     revokedTesters: number;
     disabledUsers: number;
     totalSessions?: number;
-    lastUpdated?: Timestamp | Date;
+    lastUpdated?: Timestamp;
 }
 
 /**
@@ -116,7 +116,7 @@ export const getDashboardStats = async (): Promise<AdminStats> => {
             grantedTesters: grantedSnap.data()?.count ?? 0,
             revokedTesters: 0, // Cannot easily count revoked without expensive audit query
             disabledUsers: disabledSnap.data()?.count ?? 0,
-            lastUpdated: new Date()
+            lastUpdated: Timestamp.now()
         };
     } catch (error) {
         console.error('Failed to fetch dashboard stats:', error);
@@ -319,7 +319,7 @@ export const fixTesterAccess = async (targetUid: string) => {
 };
 
 // Helper for audit logs
-const pickAccessFields = (data: Record<string, unknown> | undefined) => ({
+const pickAccessFields = (data: Record<string, unknown> | null | undefined) => ({
     testerOverride: data?.testerOverride ?? null,
     testerExpiresAt: data?.testerExpiresAt ?? null,
     plan: data?.plan ?? null,
@@ -703,7 +703,8 @@ export interface SessionFilters {
     lastDoc?: QueryDocumentSnapshot;
 }
 
-export type SessionRecord = { id: string; _raw: QueryDocumentSnapshot } & Record<string, unknown>;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type SessionRecord = { id: string; _raw: QueryDocumentSnapshot } & Record<string, any>;
 
 export interface SessionResult {
     sessions: SessionRecord[];

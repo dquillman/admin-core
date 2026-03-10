@@ -146,8 +146,8 @@ const RevenueDashboard: React.FC = () => {
             const month = formatMonth(entry.createdAt);
             ensureMonth(month);
 
-            const newStatus: string = meta.newStatus ?? meta.status ?? meta.billingStatus ?? '';
-            const prevStatus: string = meta.prevStatus ?? meta.oldStatus ?? meta.previousStatus ?? '';
+            const newStatus: string = (meta.newStatus ?? meta.status ?? meta.billingStatus ?? '') as string;
+            const prevStatus: string = (meta.prevStatus ?? meta.oldStatus ?? meta.previousStatus ?? '') as string;
 
             if (newStatus === 'paid') {
                 monthMap[month].newSubs += 1;

@@ -57,7 +57,8 @@ export interface User {
         completions?: number;
     };
 
-    [key: string]: unknown;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    [key: string]: any;
 }
 
 export type UsageBand = 'Dormant' | 'Curious' | 'Engaged' | 'Active' | 'Power User';
@@ -169,7 +170,8 @@ export interface OnboardingStep {
     id: string;
     type: OnboardingStepType;
     title: string;
-    config: Record<string, unknown>;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    config: Record<string, any>;
     order: number;
 }
 

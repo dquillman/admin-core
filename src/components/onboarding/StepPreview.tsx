@@ -10,10 +10,10 @@ export default function StepPreview({ step }: StepPreviewProps) {
         <div className="bg-white rounded-xl p-6 text-slate-900 min-h-[300px] flex flex-col">
             {step.type === 'welcome' && (
                 <div className="flex-1 flex flex-col items-center justify-center text-center space-y-4">
-                    <h2 className="text-2xl font-bold">{step.config.heading || step.title || 'Welcome!'}</h2>
-                    <p className="text-slate-500 max-w-sm">{step.config.message || 'Your welcome message here...'}</p>
+                    <h2 className="text-2xl font-bold">{(step.config.heading as string) || step.title || 'Welcome!'}</h2>
+                    <p className="text-slate-500 max-w-sm">{(step.config.message as string) || 'Your welcome message here...'}</p>
                     <button className="px-6 py-2.5 bg-blue-600 text-white rounded-lg font-medium">
-                        {step.config.buttonText || 'Get Started'}
+                        {(step.config.buttonText as string) || 'Get Started'}
                     </button>
                 </div>
             )}
@@ -21,7 +21,7 @@ export default function StepPreview({ step }: StepPreviewProps) {
             {step.type === 'form' && (
                 <div className="flex-1 space-y-4">
                     <h2 className="text-lg font-bold">{step.title || 'Tell us about yourself'}</h2>
-                    {(step.config.fieldsRaw || '').split('\n').filter(Boolean).map((line: string, i: number) => {
+                    {((step.config.fieldsRaw as string) || '').split('\n').filter(Boolean).map((line: string, i: number) => {
                         const [label, type] = line.split('|');
                         const isSelect = type?.startsWith('select:');
                         return (
@@ -41,7 +41,7 @@ export default function StepPreview({ step }: StepPreviewProps) {
                         );
                     })}
                     <button className="w-full py-2.5 bg-blue-600 text-white rounded-lg font-medium">
-                        {step.config.submitText || 'Continue'}
+                        {(step.config.submitText as string) || 'Continue'}
                     </button>
                 </div>
             )}
@@ -50,7 +50,7 @@ export default function StepPreview({ step }: StepPreviewProps) {
                 <div className="flex-1 space-y-4">
                     <h2 className="text-lg font-bold">{step.title || 'Getting started checklist'}</h2>
                     <div className="space-y-2">
-                        {(step.config.itemsRaw || '').split('\n').filter(Boolean).map((item: string, i: number) => (
+                        {((step.config.itemsRaw as string) || '').split('\n').filter(Boolean).map((item: string, i: number) => (
                             <div key={i} className="flex items-center gap-3 p-3 border border-slate-200 rounded-lg">
                                 {i === 0 ? (
                                     <CheckSquare className="w-5 h-5 text-blue-600 shrink-0" />
@@ -72,7 +72,7 @@ export default function StepPreview({ step }: StepPreviewProps) {
                     {step.config.videoUrl ? (
                         <div className="aspect-video bg-slate-100 rounded-lg overflow-hidden">
                             <iframe
-                                src={step.config.videoUrl}
+                                src={step.config.videoUrl as string}
                                 className="w-full h-full"
                                 allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
                                 allowFullScreen
@@ -83,7 +83,7 @@ export default function StepPreview({ step }: StepPreviewProps) {
                             <p className="text-slate-400 text-sm">Enter a video URL to preview</p>
                         </div>
                     )}
-                    {step.config.caption && <p className="text-sm text-slate-500 text-center">{step.config.caption}</p>}
+                    {step.config.caption ? <p className="text-sm text-slate-500 text-center">{String(step.config.caption)}</p> : null}
                 </div>
             )}
 
@@ -92,9 +92,9 @@ export default function StepPreview({ step }: StepPreviewProps) {
                     <div className="w-16 h-16 bg-blue-50 rounded-full flex items-center justify-center">
                         <ExternalLink className="w-8 h-8 text-blue-600" />
                     </div>
-                    <h2 className="text-xl font-bold">{step.config.message || "You're all set!"}</h2>
+                    <h2 className="text-xl font-bold">{(step.config.message as string) || "You're all set!"}</h2>
                     <p className="text-slate-500 text-sm">
-                        Redirecting to {step.config.url || '...'} in {step.config.delay ?? 3}s
+                        Redirecting to {(step.config.url as string) || '...'} in {(step.config.delay as number) ?? 3}s
                     </p>
                     <div className="w-48 h-1.5 bg-slate-100 rounded-full overflow-hidden">
                         <div className="h-full bg-blue-600 rounded-full w-2/3" />

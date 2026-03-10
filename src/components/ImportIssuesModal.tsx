@@ -105,7 +105,7 @@ export const ImportIssuesModal: React.FC<ImportIssuesModalProps> = ({ isOpen, on
                         setParseError(`CSV parse error: ${result.errors[0].message}`);
                         return;
                     }
-                    const parsed = result.data.map((item: Record<string, unknown>, i: number) => validateRow(item as Record<string, unknown>, i + 1));
+                    const parsed = (result.data as Record<string, unknown>[]).map((item: Record<string, unknown>, i: number) => validateRow(item, i + 1));
                     processRows(parsed);
                 },
                 error: (err) => {

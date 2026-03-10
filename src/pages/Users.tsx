@@ -1184,12 +1184,12 @@ const UsersPage: React.FC = () => {
                                     <span className="text-sm text-slate-400">Joined</span>
                                     <span className="text-sm text-white">{editUser.createdAt?.toDate().toLocaleDateString() || '—'}</span>
                                 </div>
-                                {editUser.authProvider && (
+                                {editUser.authProvider ? (
                                     <div className="flex items-center justify-between">
                                         <span className="text-sm text-slate-400">Auth Provider</span>
-                                        <span className="text-sm text-white">{editUser.authProvider}</span>
+                                        <span className="text-sm text-white">{editUser.authProvider as string}</span>
                                     </div>
-                                )}
+                                ) : null}
                             </div>
                         </div>
 

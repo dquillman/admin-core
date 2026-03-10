@@ -79,7 +79,7 @@ const FunnelPage: React.FC = () => {
         }
     };
 
-    if (loading) {
+    if (loading || !metrics) {
         return (
             <div className="flex items-center justify-center min-h-[60vh]">
                 <Loader2 className="w-8 h-8 text-brand-500 animate-spin" />

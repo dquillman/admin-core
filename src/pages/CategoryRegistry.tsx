@@ -37,7 +37,7 @@ const CategoryRegistry: React.FC = () => {
     // Suggestion State
     const [suggestionsQueue, setSuggestionsQueue] = useState<{
         issue: ReportedIssue;
-        suggestion: { categoryId: string; confidence: number; reason: string };
+        suggestion: { categoryId: string; confidence: number; reasons: string[] };
     }[]>([]);
     const [selectedIssueIds, setSelectedIssueIds] = useState<Set<string>>(new Set());
 

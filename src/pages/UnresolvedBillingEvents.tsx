@@ -13,7 +13,8 @@ interface BillingEvent {
     resolvedAt?: unknown;
     resolvedBy?: string;
     resolutionNotes?: string;
-    [key: string]: unknown;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    [key: string]: any;
 }
 
 interface ResolveState {
@@ -188,11 +189,11 @@ const UnresolvedBillingEventsPage: React.FC = () => {
                                             by {event.resolvedBy}
                                         </p>
                                     )}
-                                    {event.resolvedAt && (
+                                    {event.resolvedAt ? (
                                         <p className="text-[10px] text-slate-600">
                                             {formatDate(event.resolvedAt)}
                                         </p>
-                                    )}
+                                    ) : null}
                                 </div>
                             ) : rs?.open ? null : (
                                 <button

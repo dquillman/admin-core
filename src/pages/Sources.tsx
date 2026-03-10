@@ -25,7 +25,8 @@ function cn(...inputs: ClassValue[]) {
 const SourcesPage: React.FC = () => {
     const { appId } = useApp();
     const { isAdmin, loading: authLoading } = useAuth();
-    const [sources, setSources] = useState<Array<Record<string, unknown> & { id: string }>>([]);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const [sources, setSources] = useState<Array<Record<string, any> & { id: string }>>([]);
     const [loading, setLoading] = useState(true);
     const [showAddModal, setShowAddModal] = useState(false);
     const [newSource, setNewSource] = useState({ url: '', frequency: 'daily' });
