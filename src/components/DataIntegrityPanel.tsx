@@ -4,8 +4,14 @@ import { collection, limit, query } from 'firebase/firestore';
 import { db } from '../firebase';
 import { safeGetDocs } from '../utils/firestoreSafe';
 import { useApp } from '../context/AppContext';
-import { AlertTriangle, CheckCircle, Database, XCircle, Loader2 } from 'lucide-react';
+import { AlertTriangle, CheckCircle, Database, XCircle, Loader2, ChevronDown, ExternalLink } from 'lucide-react';
 import { normalizeAppValue } from '../constants';
+
+interface ProblemItem {
+    id: string;
+    label: string;
+    sublabel?: string;
+}
 
 interface CheckResult {
     name: string;
@@ -13,16 +19,21 @@ interface CheckResult {
     message: string;
     details?: string;
     link?: string;
+    items?: ProblemItem[];
 }
+
+const FIREBASE_CONSOLE_BASE = 'https://console.firebase.google.com/project/exam-coach-ai-platform/firestore/databases/-default-/data';
 
 const DataIntegrityPanel: React.FC = () => {
     const { appId } = useApp();
     const navigate = useNavigate();
     const [results, setResults] = useState<CheckResult[]>([]);
     const [loading, setLoading] = useState(true);
+    const [expandedIdx, setExpandedIdx] = useState<number | null>(null);
 
     const checkIntegrity = useCallback(async () => {
         setLoading(true);
+        setExpandedIdx(null);
         const checks: CheckResult[] = [];
         const norm = normalizeAppValue(appId);
 
@@ -36,39 +47,48 @@ const DataIntegrityPanel: React.FC = () => {
             checks.push({ name: 'Users Collection', status: 'fail', message: 'No users found', details: 'Collection is empty or inaccessible.' });
         } else {
             const total = usersSnap.docs.length;
-            let missingEmail = 0;
-            let noDocId = 0;
+            const missingEmailDocs: ProblemItem[] = [];
             usersSnap.docs.forEach((d) => {
-                if (!d.data().email) missingEmail++;
-                if (!d.id) noDocId++; // uid = doc ID, always present
+                const data = d.data();
+                if (!data.email) {
+                    missingEmailDocs.push({
+                        id: d.id,
+                        label: d.id,
+                        sublabel: data.displayName as string || data.role as string || 'no email/name',
+                    });
+                }
             });
-            if (missingEmail === 0) {
+            if (missingEmailDocs.length === 0) {
                 checks.push({ name: 'User Schema', status: 'pass', message: `${total} users — all have email` });
             } else {
                 checks.push({
                     name: 'User Schema',
-                    status: missingEmail > 5 ? 'warn' : 'pass',
-                    message: `${missingEmail} of ${total} users missing email`,
-                    details: missingEmail <= 5 ? 'Likely guest/anon accounts.' : undefined,
-                    link: missingEmail > 5 ? '/users' : undefined,
+                    status: missingEmailDocs.length > 5 ? 'warn' : 'pass',
+                    message: `${missingEmailDocs.length} of ${total} users missing email`,
+                    details: missingEmailDocs.length <= 5 ? 'Click to see which users.' : undefined,
+                    items: missingEmailDocs,
                 });
-            }
-            if (noDocId > 0) {
-                checks.push({ name: 'User IDs', status: 'fail', message: `${noDocId} users with empty doc ID`, link: '/users' });
             }
 
             // 2. Paid users without verifiedPaidAt
-            let paidNoVerify = 0;
-            usersSnap.docs.forEach((doc) => {
-                const data = doc.data();
-                if (data.billingStatus === 'paid' && !data.verifiedPaidAt) paidNoVerify++;
+            const paidNoVerifyDocs: ProblemItem[] = [];
+            usersSnap.docs.forEach((d) => {
+                const data = d.data();
+                if (data.billingStatus === 'paid' && !data.verifiedPaidAt) {
+                    paidNoVerifyDocs.push({
+                        id: d.id,
+                        label: (data.email as string) || d.id,
+                        sublabel: `billingStatus: paid, no verifiedPaidAt`,
+                    });
+                }
             });
-            if (paidNoVerify > 0) {
+            if (paidNoVerifyDocs.length > 0) {
                 checks.push({
                     name: 'Billing Integrity',
                     status: 'warn',
-                    message: `${paidNoVerify} paid user${paidNoVerify > 1 ? 's' : ''} missing verifiedPaidAt`,
+                    message: `${paidNoVerifyDocs.length} paid user${paidNoVerifyDocs.length > 1 ? 's' : ''} missing verifiedPaidAt`,
                     details: 'May indicate Stripe webhook issue.',
+                    items: paidNoVerifyDocs,
                     link: '/billing-alerts',
                 });
             } else {
@@ -76,25 +96,32 @@ const DataIntegrityPanel: React.FC = () => {
             }
 
             // 3. Usage scores
-            let missingScore = 0;
-            let activeNoScore = 0;
-            usersSnap.docs.forEach((doc) => {
-                const data = doc.data();
+            const noScoreDocs: ProblemItem[] = [];
+            let totalMissing = 0;
+            usersSnap.docs.forEach((d) => {
+                const data = d.data();
                 if (data.usageScore == null) {
-                    missingScore++;
-                    if (!data.archived && !data.disabled) activeNoScore++;
+                    totalMissing++;
+                    if (!data.archived && !data.disabled) {
+                        noScoreDocs.push({
+                            id: d.id,
+                            label: (data.email as string) || d.id,
+                            sublabel: data.archived ? 'archived' : data.disabled ? 'disabled' : 'active — needs backfill',
+                        });
+                    }
                 }
             });
-            if (activeNoScore > 0) {
+            if (noScoreDocs.length > 0) {
                 checks.push({
                     name: 'Usage Scores',
-                    status: activeNoScore > 10 ? 'warn' : 'pass',
-                    message: `${activeNoScore} active user${activeNoScore > 1 ? 's' : ''} missing usage score`,
-                    details: missingScore > activeNoScore ? `${missingScore} total (incl. archived)` : undefined,
+                    status: noScoreDocs.length > 10 ? 'warn' : 'pass',
+                    message: `${noScoreDocs.length} active user${noScoreDocs.length > 1 ? 's' : ''} missing usage score`,
+                    details: totalMissing > noScoreDocs.length ? `${totalMissing} total (incl. archived)` : undefined,
+                    items: noScoreDocs,
                     link: '/usage-config',
                 });
             } else {
-                checks.push({ name: 'Usage Scores', status: 'pass', message: `All active users have scores` });
+                checks.push({ name: 'Usage Scores', status: 'pass', message: 'All active users have scores' });
             }
         }
 
@@ -121,11 +148,19 @@ const DataIntegrityPanel: React.FC = () => {
             { fallback: [], context: 'Integrity', description: 'Check Unresolved Billing' }
         );
         if (!unresolvedSnap.empty) {
-            const count = unresolvedSnap.docs.length;
+            const items: ProblemItem[] = unresolvedSnap.docs.map(d => {
+                const data = d.data();
+                return {
+                    id: d.id,
+                    label: (data.email as string) || d.id,
+                    sublabel: (data.type as string) || 'unknown event type',
+                };
+            });
             checks.push({
                 name: 'Unresolved Billing',
-                status: count >= 5 ? 'fail' : 'warn',
-                message: `${count} unresolved event${count > 1 ? 's' : ''} need attention`,
+                status: items.length >= 5 ? 'fail' : 'warn',
+                message: `${items.length} unresolved event${items.length > 1 ? 's' : ''} need attention`,
+                items,
                 link: '/unresolved-billing',
             });
         } else {
@@ -142,7 +177,7 @@ const DataIntegrityPanel: React.FC = () => {
             .map(d => ({ ...d.data(), id: d.id } as IssueDoc))
             .filter(i => !i.deleted && normalizeAppValue(i.app as string) === norm);
 
-        // 6. Orphan PFV references — issues pointing to non-existent release versions
+        // 6. Orphan PFV references
         const versionsSnap = await safeGetDocs(
             query(collection(db, 'release_versions')),
             { fallback: [], context: 'Integrity', description: 'Check Release Versions' }
@@ -152,42 +187,57 @@ const DataIntegrityPanel: React.FC = () => {
                 .filter(d => normalizeAppValue(d.data().appId as string) === norm)
                 .map(d => d.data().version as string)
         );
-
-        const issuesWithPfv = appIssues.filter(i => i.plannedForVersion);
-        let orphanPfv = 0;
-        issuesWithPfv.forEach((i) => {
-            if (!validVersions.has(i.plannedForVersion as string)) orphanPfv++;
+        const orphanItems: ProblemItem[] = [];
+        appIssues.forEach((i) => {
+            if (i.plannedForVersion && !validVersions.has(i.plannedForVersion as string)) {
+                orphanItems.push({
+                    id: i.id,
+                    label: (i.displayId as string) || i.id,
+                    sublabel: `PFV: ${i.plannedForVersion} (not found)`,
+                });
+            }
         });
-        if (orphanPfv > 0) {
+        if (orphanItems.length > 0) {
             checks.push({
                 name: 'Issue PFV References',
                 status: 'warn',
-                message: `${orphanPfv} issue${orphanPfv > 1 ? 's' : ''} reference non-existent versions`,
+                message: `${orphanItems.length} issue${orphanItems.length > 1 ? 's' : ''} reference non-existent versions`,
+                items: orphanItems,
                 link: '/issues?status=new,reviewed,working,blocked,backlogged,fixed,released,closed',
             });
         } else {
+            const pfvCount = appIssues.filter(i => i.plannedForVersion).length;
             checks.push({
                 name: 'Issue PFV References',
                 status: 'pass',
-                message: issuesWithPfv.length > 0 ? `${issuesWithPfv.length} PFV assignments valid` : 'No PFV assignments yet',
+                message: pfvCount > 0 ? `${pfvCount} PFV assignments valid` : 'No PFV assignments yet',
             });
         }
 
-        // 7. Open issues count — app-scoped, excluding deleted
-        const openCount = appIssues.filter(i => i.status === 'new').length;
-        if (openCount >= 20) {
+        // 7. Open issues count — app-scoped
+        const newIssues = appIssues.filter(i => i.status === 'new');
+        if (newIssues.length >= 20) {
+            const items: ProblemItem[] = newIssues.slice(0, 10).map(i => ({
+                id: i.id,
+                label: (i.displayId as string) || i.id,
+                sublabel: ((i.message as string) || (i.description as string) || 'No title').slice(0, 60),
+            }));
+            if (newIssues.length > 10) {
+                items.push({ id: '_more', label: `...and ${newIssues.length - 10} more`, sublabel: '' });
+            }
             checks.push({
                 name: 'Issue Backlog',
                 status: 'warn',
-                message: `${openCount} untriaged issues for ${norm} (status: new)`,
+                message: `${newIssues.length} untriaged issues for ${norm} (status: new)`,
                 details: 'Review and triage these.',
+                items,
                 link: '/issues?status=new',
             });
         } else {
             checks.push({
                 name: 'Issue Backlog',
                 status: 'pass',
-                message: `${openCount} new issue${openCount !== 1 ? 's' : ''} for ${norm} — backlog healthy`,
+                message: `${newIssues.length} new issue${newIssues.length !== 1 ? 's' : ''} for ${norm} — backlog healthy`,
             });
         }
 
@@ -231,34 +281,103 @@ const DataIntegrityPanel: React.FC = () => {
                 </div>
             ) : (
                 <div className="divide-y divide-slate-100 dark:divide-slate-800">
-                    {results.map((check, idx) => (
-                        <div key={idx} className="px-6 py-3 flex items-start justify-between gap-4">
-                            <div className="flex items-center gap-3 min-w-0">
-                                {check.status === 'pass' && <CheckCircle className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" />}
-                                {check.status === 'warn' && <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />}
-                                {check.status === 'fail' && <XCircle className="w-4 h-4 text-rose-500 shrink-0 mt-0.5" />}
-                                <div className="min-w-0">
-                                    <p className="text-sm font-medium text-slate-700 dark:text-slate-300">{check.name}</p>
-                                    <p className="text-xs text-slate-500 dark:text-slate-400 truncate">{check.message}</p>
+                    {results.map((check, idx) => {
+                        const isExpanded = expandedIdx === idx;
+                        const hasItems = check.items && check.items.length > 0;
+                        const isClickable = hasItems || (check.link && check.status !== 'pass');
+
+                        return (
+                            <div key={idx}>
+                                <div
+                                    className={`px-6 py-3 flex items-start justify-between gap-4 ${isClickable ? 'cursor-pointer hover:bg-slate-800/30' : ''}`}
+                                    onClick={() => {
+                                        if (hasItems) {
+                                            setExpandedIdx(isExpanded ? null : idx);
+                                        } else if (check.link && check.status !== 'pass') {
+                                            navigate(check.link);
+                                        }
+                                    }}
+                                >
+                                    <div className="flex items-center gap-3 min-w-0">
+                                        {check.status === 'pass' && <CheckCircle className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" />}
+                                        {check.status === 'warn' && <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />}
+                                        {check.status === 'fail' && <XCircle className="w-4 h-4 text-rose-500 shrink-0 mt-0.5" />}
+                                        <div className="min-w-0">
+                                            <p className="text-sm font-medium text-slate-700 dark:text-slate-300">{check.name}</p>
+                                            <p className="text-xs text-slate-500 dark:text-slate-400 truncate">{check.message}</p>
+                                        </div>
+                                    </div>
+                                    <div className="flex items-center gap-2 shrink-0">
+                                        {check.details && (
+                                            <span className="text-[10px] bg-slate-100 dark:bg-slate-800 text-slate-500 px-2 py-1 rounded-full whitespace-nowrap">
+                                                {check.details}
+                                            </span>
+                                        )}
+                                        {hasItems && (
+                                            <ChevronDown className={`w-3.5 h-3.5 text-slate-500 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
+                                        )}
+                                        {!hasItems && check.link && check.status !== 'pass' && (
+                                            <span className="text-[10px] text-indigo-400 font-medium whitespace-nowrap">
+                                                Fix &rarr;
+                                            </span>
+                                        )}
+                                    </div>
                                 </div>
-                            </div>
-                            <div className="flex items-center gap-2 shrink-0">
-                                {check.details && (
-                                    <span className="text-[10px] bg-slate-100 dark:bg-slate-800 text-slate-500 px-2 py-1 rounded-full whitespace-nowrap">
-                                        {check.details}
-                                    </span>
+
+                                {/* Expanded item list */}
+                                {isExpanded && hasItems && (
+                                    <div className="bg-slate-950/50 border-t border-slate-800">
+                                        <div className="px-6 py-2 space-y-1">
+                                            {check.items!.map((item) => (
+                                                <div key={item.id} className="flex items-center justify-between gap-3 py-1.5">
+                                                    <div className="min-w-0">
+                                                        <span className="text-xs font-mono text-slate-300">{item.label}</span>
+                                                        {item.sublabel && (
+                                                            <span className="text-[10px] text-slate-500 ml-2">{item.sublabel}</span>
+                                                        )}
+                                                    </div>
+                                                    <div className="flex items-center gap-2 shrink-0">
+                                                        {item.id !== '_more' && item.label !== item.id && (
+                                                            <button
+                                                                onClick={(e) => { e.stopPropagation(); navigate(`/users?search=${encodeURIComponent(item.label)}`); }}
+                                                                className="text-[10px] text-indigo-400 hover:text-indigo-300"
+                                                                title="Search in Users"
+                                                            >
+                                                                Users
+                                                            </button>
+                                                        )}
+                                                        {item.id !== '_more' && (
+                                                            <a
+                                                                href={`${FIREBASE_CONSOLE_BASE}/~2Fusers~2F${item.id}`}
+                                                                target="_blank"
+                                                                rel="noopener noreferrer"
+                                                                onClick={(e) => e.stopPropagation()}
+                                                                className="text-[10px] text-slate-500 hover:text-slate-300 flex items-center gap-0.5"
+                                                                title="Open in Firebase Console"
+                                                            >
+                                                                <ExternalLink className="w-2.5 h-2.5" />
+                                                                Firestore
+                                                            </a>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                        {check.link && (
+                                            <div className="px-6 py-2 border-t border-slate-800">
+                                                <button
+                                                    onClick={(e) => { e.stopPropagation(); navigate(check.link!); }}
+                                                    className="text-xs text-indigo-400 hover:text-indigo-300 font-medium"
+                                                >
+                                                    Open full page &rarr;
+                                                </button>
+                                            </div>
+                                        )}
+                                    </div>
                                 )}
-                                {check.link && check.status !== 'pass' && (
-                                    <button
-                                        onClick={() => navigate(check.link!)}
-                                        className="text-[10px] text-indigo-400 hover:text-indigo-300 font-medium whitespace-nowrap"
-                                    >
-                                        Fix &rarr;
-                                    </button>
-                                )}
                             </div>
-                        </div>
-                    ))}
+                        );
+                    })}
                 </div>
             )}
         </div>
