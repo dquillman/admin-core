@@ -198,6 +198,34 @@ export const IssueDetailModal: React.FC<IssueDetailModalProps> = ({ issue, onClo
                         <div className="text-xs text-slate-500">
                             Created: {formatDate(localIssue.timestamp || localIssue.createdAt)}
                         </div>
+                        {/* Version badges — match what issue cards show */}
+                        <div className="flex items-center gap-2 mt-2 flex-wrap">
+                            {localIssue.plannedForVersion && (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium border border-cyan-500/20 bg-cyan-500/10 text-cyan-400">
+                                    PFV: {localIssue.plannedForVersion}
+                                </span>
+                            )}
+                            {localIssue.releasedInVersion && (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium border border-emerald-500/20 bg-emerald-500/10 text-emerald-400">
+                                    RIV: {localIssue.releasedInVersion}
+                                </span>
+                            )}
+                            {localIssue.severity && (
+                                <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${
+                                    localIssue.severity === 'S1' ? 'border-red-500/20 bg-red-500/10 text-red-400' :
+                                    localIssue.severity === 'S2' ? 'border-orange-500/20 bg-orange-500/10 text-orange-400' :
+                                    localIssue.severity === 'S3' ? 'border-yellow-500/20 bg-yellow-500/10 text-yellow-400' :
+                                    'border-slate-500/20 bg-slate-500/10 text-slate-400'
+                                }`}>
+                                    {localIssue.severity}
+                                </span>
+                            )}
+                            {localIssue.status && (
+                                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border border-slate-600/30 bg-slate-700/30 text-slate-300">
+                                    {localIssue.status}
+                                </span>
+                            )}
+                        </div>
                     </div>
                     <button onClick={onClose} className="p-2 hover:bg-slate-800 rounded-lg text-slate-500 hover:text-white transition-colors">
                         <X className="w-6 h-6" />
