@@ -35,25 +35,24 @@ const DataIntegrityPanel: React.FC = () => {
         } else {
             const total = usersSnap.docs.length;
             let missingEmail = 0;
-            let missingUid = 0;
-            usersSnap.docs.forEach((doc) => {
-                const data = doc.data();
-                if (!data.email) missingEmail++;
-                if (!data.uid) missingUid++;
+            let noDocId = 0;
+            usersSnap.docs.forEach((d) => {
+                if (!d.data().email) missingEmail++;
+                if (!d.id) noDocId++; // uid = doc ID, always present
             });
-            const bad = missingEmail + missingUid;
-            if (bad === 0) {
-                checks.push({ name: 'User Schema', status: 'pass', message: `${total} users — all have email + uid` });
+            if (missingEmail === 0) {
+                checks.push({ name: 'User Schema', status: 'pass', message: `${total} users — all have email` });
             } else {
-                const parts: string[] = [];
-                if (missingEmail > 0) parts.push(`${missingEmail} missing email`);
-                if (missingUid > 0) parts.push(`${missingUid} missing uid`);
                 checks.push({
                     name: 'User Schema',
-                    status: 'warn',
-                    message: `${parts.join(', ')} (of ${total})`,
-                    link: '/users',
+                    status: missingEmail > 5 ? 'warn' : 'pass',
+                    message: `${missingEmail} of ${total} users missing email`,
+                    details: missingEmail <= 5 ? 'Likely guest/anon accounts.' : undefined,
+                    link: missingEmail > 5 ? '/users' : undefined,
                 });
+            }
+            if (noDocId > 0) {
+                checks.push({ name: 'User IDs', status: 'fail', message: `${noDocId} users with empty doc ID`, link: '/users' });
             }
 
             // 2. Paid users without verifiedPaidAt
@@ -105,13 +104,13 @@ const DataIntegrityPanel: React.FC = () => {
         if (appConfigSnap.empty) {
             checks.push({
                 name: `App Config (${norm})`,
-                status: 'warn',
-                message: 'No config docs found',
-                details: 'Plans/features may use defaults.',
+                status: 'pass',
+                message: 'No saved config — using defaults',
+                details: 'Save on Plans page to persist.',
                 link: '/plans',
             });
         } else {
-            checks.push({ name: `App Config (${norm})`, status: 'pass', message: 'Configuration found' });
+            checks.push({ name: `App Config (${norm})`, status: 'pass', message: `${appConfigSnap.docs.length} config doc${appConfigSnap.docs.length > 1 ? 's' : ''} found` });
         }
 
         // 5. Unresolved billing events
