@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { collection, limit, query, where } from 'firebase/firestore';
+import { collection, limit, query } from 'firebase/firestore';
 import { db } from '../firebase';
-import { safeGetDocs, safeGetCount } from '../utils/firestoreSafe';
+import { safeGetDocs } from '../utils/firestoreSafe';
 import { useApp } from '../context/AppContext';
 import { AlertTriangle, CheckCircle, Database, XCircle, Loader2 } from 'lucide-react';
 import { normalizeAppValue } from '../constants';
@@ -131,21 +131,31 @@ const DataIntegrityPanel: React.FC = () => {
             checks.push({ name: 'Unresolved Billing', status: 'pass', message: 'No unresolved billing events' });
         }
 
-        // 6. Orphan issues — issues with a PFV that doesn't match any release version
+        // 6 & 7: Fetch all issues for the current app (client-side filter by app + exclude deleted)
+        const allIssuesSnap = await safeGetDocs(
+            query(collection(db, 'issues'), limit(500)),
+            { fallback: [], context: 'Integrity', description: 'Check Issues' }
+        );
+        type IssueDoc = Record<string, unknown> & { id: string };
+        const appIssues: IssueDoc[] = allIssuesSnap.docs
+            .map(d => ({ ...d.data(), id: d.id } as IssueDoc))
+            .filter(i => !i.deleted && normalizeAppValue(i.app as string) === norm);
+
+        // 6. Orphan PFV references — issues pointing to non-existent release versions
         const versionsSnap = await safeGetDocs(
             query(collection(db, 'release_versions')),
             { fallback: [], context: 'Integrity', description: 'Check Release Versions' }
         );
-        const validVersions = new Set(versionsSnap.docs.map(d => d.data().version as string));
-
-        const issuesSnap = await safeGetDocs(
-            query(collection(db, 'issues'), where('plannedForVersion', '!=', ''), limit(200)),
-            { fallback: [], context: 'Integrity', description: 'Check Issue PFVs' }
+        const validVersions = new Set(
+            versionsSnap.docs
+                .filter(d => normalizeAppValue(d.data().appId as string) === norm)
+                .map(d => d.data().version as string)
         );
+
+        const issuesWithPfv = appIssues.filter(i => i.plannedForVersion);
         let orphanPfv = 0;
-        issuesSnap.docs.forEach((doc) => {
-            const pfv = doc.data().plannedForVersion;
-            if (pfv && !validVersions.has(pfv)) orphanPfv++;
+        issuesWithPfv.forEach((i) => {
+            if (!validVersions.has(i.plannedForVersion as string)) orphanPfv++;
         });
         if (orphanPfv > 0) {
             checks.push({
@@ -155,25 +165,20 @@ const DataIntegrityPanel: React.FC = () => {
                 link: '/issues',
             });
         } else {
-            const pfvCount = issuesSnap.docs.length;
             checks.push({
                 name: 'Issue PFV References',
                 status: 'pass',
-                message: pfvCount > 0 ? `${pfvCount} PFV assignments valid` : 'No PFV assignments yet',
+                message: issuesWithPfv.length > 0 ? `${issuesWithPfv.length} PFV assignments valid` : 'No PFV assignments yet',
             });
         }
 
-        // 7. Open issues count (quick health signal)
-        const openIssuesSnap = await safeGetCount(
-            query(collection(db, 'issues'), where('status', '==', 'new')),
-            { fallback: 0, context: 'Integrity', description: 'Count New Issues' }
-        );
-        const openCount = openIssuesSnap.data().count;
+        // 7. Open issues count — app-scoped, excluding deleted
+        const openCount = appIssues.filter(i => i.status === 'new').length;
         if (openCount >= 20) {
             checks.push({
                 name: 'Issue Backlog',
                 status: 'warn',
-                message: `${openCount} untriaged issues (status: new)`,
+                message: `${openCount} untriaged issues for ${norm} (status: new)`,
                 details: 'Consider reviewing in Operator Report.',
                 link: '/operator-report',
             });
@@ -181,7 +186,7 @@ const DataIntegrityPanel: React.FC = () => {
             checks.push({
                 name: 'Issue Backlog',
                 status: 'pass',
-                message: `${openCount} new issue${openCount !== 1 ? 's' : ''} — backlog healthy`,
+                message: `${openCount} new issue${openCount !== 1 ? 's' : ''} for ${norm} — backlog healthy`,
             });
         }
 
