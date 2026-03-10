@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { collection, limit, query } from 'firebase/firestore';
 import { db } from '../firebase';
 import { safeGetDocs } from '../utils/firestoreSafe';
@@ -16,6 +17,7 @@ interface CheckResult {
 
 const DataIntegrityPanel: React.FC = () => {
     const { appId } = useApp();
+    const navigate = useNavigate();
     const [results, setResults] = useState<CheckResult[]>([]);
     const [loading, setLoading] = useState(true);
 
@@ -161,7 +163,7 @@ const DataIntegrityPanel: React.FC = () => {
                 name: 'Issue PFV References',
                 status: 'warn',
                 message: `${orphanPfv} issue${orphanPfv > 1 ? 's' : ''} reference non-existent versions`,
-                link: '/issues',
+                link: '/issues?status=new,reviewed,working,blocked,backlogged,fixed,released,closed',
             });
         } else {
             checks.push({
@@ -178,8 +180,8 @@ const DataIntegrityPanel: React.FC = () => {
                 name: 'Issue Backlog',
                 status: 'warn',
                 message: `${openCount} untriaged issues for ${norm} (status: new)`,
-                details: 'Consider reviewing in Operator Report.',
-                link: '/operator-report',
+                details: 'Review and triage these.',
+                link: '/issues?status=new',
             });
         } else {
             checks.push({
@@ -247,12 +249,12 @@ const DataIntegrityPanel: React.FC = () => {
                                     </span>
                                 )}
                                 {check.link && check.status !== 'pass' && (
-                                    <a
-                                        href={check.link}
+                                    <button
+                                        onClick={() => navigate(check.link!)}
                                         className="text-[10px] text-indigo-400 hover:text-indigo-300 font-medium whitespace-nowrap"
                                     >
-                                        View &rarr;
-                                    </a>
+                                        Fix &rarr;
+                                    </button>
                                 )}
                             </div>
                         </div>

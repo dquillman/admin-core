@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { assignMissingIssueIds, repairDuplicateIssueIds, repairMismatchedPrefixes, subscribeToReportedIssues, subscribeToIssueCategories, subscribeToReleaseVersions, fetchAllUsersLookup, normalizeIssueStatus } from '../services/firestoreService';
 import { useAppSubscribers } from '../hooks/useAppSubscribers';
 import { useApp } from '../context/AppContext';
@@ -104,6 +105,7 @@ const Issues: React.FC = () => {
     const { isAdmin } = useAuth();
     const { appId } = useApp();
     const { filterByUid } = useAppSubscribers();
+    const [searchParams] = useSearchParams();
     const [issues, setIssues] = useState<ReportedIssue[]>([]);
     const [loading, setLoading] = useState(true);
     const [isReviewPanelOpen, setIsReviewPanelOpen] = useState(false);
@@ -112,20 +114,20 @@ const Issues: React.FC = () => {
     const [isAssigning, setIsAssigning] = useState(false);
 
     // Filter & Sort State — default filterApp to active app from sidebar
+    // URL params override defaults (e.g. /issues?status=new from Data Integrity panel)
     const [filterApp, setFilterApp] = useState<string>(appId);
     const [filterType, setFilterType] = useState<string>('all');
-    const [filterStatuses, setFilterStatuses] = useState<string[]>([
-        ISSUE_STATUS.NEW,
-        ISSUE_STATUS.REVIEWED,
-        ISSUE_STATUS.WORKING,
-        'blocked'
-    ]);
+    const [filterStatuses, setFilterStatuses] = useState<string[]>(() => {
+        const urlStatus = searchParams.get('status');
+        if (urlStatus) return urlStatus.split(',');
+        return [ISSUE_STATUS.NEW, ISSUE_STATUS.REVIEWED, ISSUE_STATUS.WORKING, 'blocked'];
+    });
     const [filterSeverity, setFilterSeverity] = useState<string>('all');
     const [filterPlatform, setFilterPlatform] = useState<string>('all');
     const [searchUser, setSearchUser] = useState<string>('');
     const [filterClassification, setFilterClassification] = useState<string>('all');
     const [filterAssignee, setFilterAssignee] = useState<string>('all');
-    const [filterPFV, setFilterPFV] = useState<string>('all');
+    const [filterPFV, setFilterPFV] = useState<string>(searchParams.get('pfv') ?? 'all');
     const [filterRIV, setFilterRIV] = useState<string>('all');
     const [filterEnvironment, setFilterEnvironment] = useState<string>('all');
     const [filterVersion, setFilterVersion] = useState<string>('all');
