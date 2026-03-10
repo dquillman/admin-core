@@ -25,22 +25,6 @@ import OnboardingFlows from './pages/OnboardingFlows';
 import FlowBuilder from './pages/FlowBuilder';
 import OnboardingAnalytics from './pages/OnboardingAnalytics';
 import SdkSetup from './pages/SdkSetup';
-
-// GameForge
-import GameForgeDashboard from './pages/GameForgeDashboard';
-import GameForgeGames from './pages/GameForgeGames';
-import GameForgeGameEditor from './pages/GameForgeGameEditor';
-import GameForgePlayers from './pages/GameForgePlayers';
-import GameForgePlayerDetail from './pages/GameForgePlayerDetail';
-import GameForgeLeaderboards from './pages/GameForgeLeaderboards';
-import GameForgeAnalytics from './pages/GameForgeAnalytics';
-import GameForgeSubscriptions from './pages/GameForgeSubscriptions';
-import GameForgePayments from './pages/GameForgePayments';
-import GameForgeNotifications from './pages/GameForgeNotifications';
-import GameForgeAI from './pages/GameForgeAI';
-import GameForgeWorkflows from './pages/GameForgeWorkflows';
-import GameForgeWorkflowEditor from './pages/GameForgeWorkflowEditor';
-
 // v1.17.0 — New Pages
 import BillingHistory from './pages/BillingHistory';
 import AuditTimeline from './pages/AuditTimeline';
@@ -108,21 +92,6 @@ function App() {
           {/* v1.17.0 — Audit & Release */}
           <Route path="/audit-timeline" element={<AuditTimeline />} />
           <Route path="/release-readiness" element={<ReleaseReadiness />} />
-
-          {/* GameForge */}
-          <Route path="/game-forge" element={<GameForgeDashboard />} />
-          <Route path="/game-forge/games" element={<GameForgeGames />} />
-          <Route path="/game-forge/games/:gameId" element={<GameForgeGameEditor />} />
-          <Route path="/game-forge/players" element={<GameForgePlayers />} />
-          <Route path="/game-forge/players/:playerId" element={<GameForgePlayerDetail />} />
-          <Route path="/game-forge/leaderboards" element={<GameForgeLeaderboards />} />
-          <Route path="/game-forge/analytics" element={<GameForgeAnalytics />} />
-          <Route path="/game-forge/subscriptions" element={<GameForgeSubscriptions />} />
-          <Route path="/game-forge/payments" element={<GameForgePayments />} />
-          <Route path="/game-forge/notifications" element={<GameForgeNotifications />} />
-          <Route path="/game-forge/ai" element={<GameForgeAI />} />
-          <Route path="/game-forge/workflows" element={<GameForgeWorkflows />} />
-          <Route path="/game-forge/workflows/:workflowId" element={<GameForgeWorkflowEditor />} />
 
         </Route>
 

@@ -30,11 +30,7 @@ import {
     Settings,
     Bell,
     UserX,
-    Gamepad2,
     Layers,
-    Trophy,
-    Sparkles,
-    GitBranch,
 } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { useApp } from '../context/AppContext';
@@ -77,18 +73,6 @@ const Sidebar: React.FC = () => {
             { to: '/onboarding', icon: ListChecks, label: 'Flows' },
             { to: '/onboarding/analytics', icon: BarChart2, label: 'Analytics' },
             { to: '/onboarding/sdk-setup', icon: Code2, label: 'SDK Setup' },
-        ] : []),
-        ...(appId === 'game-forge' ? [
-            { to: '/game-forge', icon: Gamepad2, label: 'Dashboard' },
-            { to: '/game-forge/games', icon: Layers, label: 'Games' },
-            { to: '/game-forge/players', icon: Users, label: 'Players' },
-            { to: '/game-forge/leaderboards', icon: Trophy, label: 'Leaderboards' },
-            { to: '/game-forge/analytics', icon: BarChart2, label: 'Analytics' },
-            { to: '/game-forge/subscriptions', icon: CreditCard, label: 'Subscriptions' },
-            { to: '/game-forge/payments', icon: DollarSign, label: 'Payments' },
-            { to: '/game-forge/notifications', icon: Bell, label: 'Notifications' },
-            { to: '/game-forge/ai', icon: Sparkles, label: 'AI Insights' },
-            { to: '/game-forge/workflows', icon: GitBranch, label: 'Workflows' },
         ] : []),
         // Billing & Revenue (admin-gated)
         ...(state.isAdmin ? [
