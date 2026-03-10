@@ -11,7 +11,6 @@ import LeadsPage from './pages/Marketing/Leads';
 import OutreachPage from './pages/Marketing/Outreach';
 import Funnel from './pages/Funnel';
 import TutorImpact from './pages/TutorImpact';
-import GodsView from './pages/GodsView';
 import ProtectedRoute from './components/ProtectedRoute';
 import Layout from './components/Layout';
 import Issues from './pages/Issues';
@@ -82,7 +81,6 @@ function App() {
           <Route path="/marketing/outreach" element={<OutreachPage />} />
           <Route path="/funnel" element={<Funnel />} />
           <Route path="/tutor-impact" element={<TutorImpact />} />
-          <Route path="/gods-view" element={<GodsView />} />
           <Route path="/categories" element={<CategoryRegistry />} />
           <Route path="/versions" element={<ReleaseVersions />} />
           <Route path="/exams" element={<Exams />} />

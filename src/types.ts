@@ -115,7 +115,7 @@ export interface ConversionEvent {
     metadata?: Record<string, unknown>;
 }
 
-// --- Activity Types (used by GodsView / Activity2112) ---
+// --- Activity Types (used by Activity2112) ---
 
 export type DecisionType = 'resource_allocation' | 'feature_prioritization' | 'risk_assessment' | 'simulation';
 export type DecisionStatus = 'pending' | 'approved' | 'rejected' | 'implemented' | 'simulated';
