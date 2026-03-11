@@ -11,7 +11,7 @@ export const useMigration = () => {
 
     useEffect(() => {
         const migrateConfig = async () => {
-            if (!isAdmin || !user || !appId) return;
+            if (!isAdmin || !user || !appId || appId === 'all') return;
 
             try {
                 // Check if new config exists

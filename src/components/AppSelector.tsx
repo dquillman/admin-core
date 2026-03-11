@@ -37,7 +37,7 @@ export const AppSelector: React.FC = () => {
                     </div>
                     <div className="text-left overflow-hidden">
                         <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Active App</p>
-                        <p className="text-sm font-bold text-white truncate">{appId}</p>
+                        <p className="text-sm font-bold text-white truncate">{appId === 'all' ? 'All Apps' : appId}</p>
                     </div>
                 </div>
                 <ChevronDown className={cn("w-4 h-4 text-slate-500 transition-transform", isOpen && "rotate-180")} />
@@ -51,7 +51,24 @@ export const AppSelector: React.FC = () => {
                     />
                     <div className="absolute top-full left-0 w-full mt-2 bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl z-20 overflow-hidden animate-in zoom-in-95 duration-200">
                         <div className="p-2 space-y-1">
-                            {availableApps.map((id) => (
+                            {/* All Apps option */}
+                            <button
+                                onClick={() => {
+                                    setAppId('all');
+                                    setIsOpen(false);
+                                }}
+                                className={cn(
+                                    "w-full flex items-center justify-between p-3 rounded-xl transition-all text-sm",
+                                    appId === 'all'
+                                        ? "bg-brand-600/10 text-brand-400 font-bold"
+                                        : "text-slate-400 hover:text-white hover:bg-slate-800"
+                                )}
+                            >
+                                All Apps
+                                {appId === 'all' && <Check className="w-4 h-4" />}
+                            </button>
+                            <div className="border-t border-slate-800 my-1" />
+                            {availableApps.filter(id => id !== 'all').map((id) => (
                                 <button
                                     key={id}
                                     onClick={() => {

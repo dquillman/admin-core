@@ -404,6 +404,9 @@ export const IssueDetailModal: React.FC<IssueDetailModalProps> = ({ issue, onClo
                                 className={`w-full bg-slate-900 border text-sm rounded-lg p-2.5 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 transition-colors ${!isAdmin ? 'opacity-50 cursor-not-allowed border-slate-700' : 'border-slate-700 text-slate-200'}`}
                             >
                                 <option value="">Not planned</option>
+                                {localIssue.plannedForVersion && !releaseVersions.some(v => v.version === localIssue.plannedForVersion) && (
+                                    <option value={localIssue.plannedForVersion}>{localIssue.plannedForVersion} (unlinked)</option>
+                                )}
                                 {releaseVersions
                                     .filter(v => v.status !== 'released' || v.version === localIssue.plannedForVersion)
                                     .map(v => (
@@ -476,6 +479,9 @@ export const IssueDetailModal: React.FC<IssueDetailModalProps> = ({ issue, onClo
                                 }`}
                             >
                                 <option value="">Not released</option>
+                                {localIssue.releasedInVersion && !releaseVersions.some(v => v.version === localIssue.releasedInVersion) && (
+                                    <option value={localIssue.releasedInVersion}>{localIssue.releasedInVersion} (unlinked)</option>
+                                )}
                                 {releaseVersions.map(v => (
                                     <option key={v.id} value={v.version}>
                                         {v.version} ({v.status})

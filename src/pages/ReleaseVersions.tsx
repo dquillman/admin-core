@@ -45,15 +45,16 @@ const ReleaseVersionsPage: React.FC = () => {
         }
         setLoading(true);
         const col = collection(db, 'release_versions');
-        const norm = normalizeAppValue(appId);
-        // Server-side filter for non-exam-coach apps; client-side for exam-coach (catches legacy docs without appId)
-        const constraints = norm && norm !== 'exam-coach'
+        const isAll = appId === 'all';
+        const norm = isAll ? null : normalizeAppValue(appId);
+        // 'all' = no filter; non-exam-coach = server-side filter; exam-coach = client-side filter
+        const constraints = (!isAll && norm && norm !== 'exam-coach')
             ? [where('appId', '==', norm), orderBy('version', 'desc')]
             : [orderBy('version', 'desc')];
         const unsubscribe = onSnapshot(query(col, ...constraints), (snapshot) => {
             let vers = snapshot.docs.map(d => ({ id: d.id, ...d.data() } as ReleaseVersion));
             // Client-side filter for exam-coach to catch legacy docs without appId field
-            if (norm === 'exam-coach') {
+            if (!isAll && norm === 'exam-coach') {
                 vers = vers.filter(v => normalizeAppValue(v.appId || 'exam-coach') === 'exam-coach');
             }
             setVersions(vers);
@@ -134,7 +135,10 @@ const ReleaseVersionsPage: React.FC = () => {
             <div>
                 <h1 className="text-4xl font-bold text-white tracking-tight mb-2">Release Versions</h1>
                 <p className="text-slate-400">
-                    Manage release versions for <span className="text-white font-semibold">{appId}</span> used for issue planning (PFV).
+                    {appId === 'all'
+                        ? 'Viewing release versions across all apps.'
+                        : <>Manage release versions for <span className="text-white font-semibold">{appId}</span> used for issue planning (PFV).</>
+                    }
                 </p>
             </div>
 
@@ -146,6 +150,7 @@ const ReleaseVersionsPage: React.FC = () => {
                             <thead>
                                 <tr className="bg-slate-800/50 border-b border-slate-800">
                                     <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-slate-500">Version</th>
+                                    {appId === 'all' && <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-slate-500">App</th>}
                                     <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-slate-500">Status</th>
                                     <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-slate-500">Created</th>
                                     <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-slate-500">Actions</th>
@@ -154,7 +159,7 @@ const ReleaseVersionsPage: React.FC = () => {
                             <tbody className="divide-y divide-slate-800">
                                 {loading ? (
                                     <tr>
-                                        <td colSpan={4} className="px-6 py-12 text-center">
+                                        <td colSpan={appId === 'all' ? 5 : 4} className="px-6 py-12 text-center">
                                             <Loader2 className="w-8 h-8 text-brand-500 animate-spin mx-auto" />
                                         </td>
                                     </tr>
@@ -166,6 +171,11 @@ const ReleaseVersionsPage: React.FC = () => {
                                                 <span className="text-sm font-bold text-white font-mono">{v.version}</span>
                                             </div>
                                         </td>
+                                        {appId === 'all' && (
+                                            <td className="px-6 py-4">
+                                                <span className="text-xs text-slate-400 font-mono">{v.appId || 'exam-coach'}</span>
+                                            </td>
+                                        )}
                                         <td className="px-6 py-4">
                                             <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider border ${STATUS_COLORS[v.status]}`}>
                                                 {v.status}
@@ -197,8 +207,8 @@ const ReleaseVersionsPage: React.FC = () => {
                                     </tr>
                                 )) : (
                                     <tr>
-                                        <td colSpan={4} className="px-6 py-12 text-center text-slate-500 italic">
-                                            No versions for {appId}. Add one to get started.
+                                        <td colSpan={appId === 'all' ? 5 : 4} className="px-6 py-12 text-center text-slate-500 italic">
+                                            No versions{appId !== 'all' ? ` for ${appId}` : ''}. {appId !== 'all' ? 'Add one to get started.' : 'Select an app to add versions.'}
                                         </td>
                                     </tr>
                                 )}
@@ -215,30 +225,34 @@ const ReleaseVersionsPage: React.FC = () => {
                             Add Version
                         </h3>
 
-                        <form onSubmit={handleAddVersion} className="space-y-4">
-                            <div>
-                                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">
-                                    Version Number
-                                </label>
-                                <input
-                                    type="text"
-                                    value={newVersion}
-                                    onChange={(e) => setNewVersion(e.target.value)}
-                                    placeholder="1.15.1"
-                                    className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-2.5 text-white font-mono placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition-all"
-                                />
-                                <p className="text-[10px] text-slate-500 mt-1">Format: x.xx.x (e.g. 1.15.1, 2.0.0)</p>
-                            </div>
+                        {appId === 'all' ? (
+                            <p className="text-sm text-slate-500">Select a specific app to add versions.</p>
+                        ) : (
+                            <form onSubmit={handleAddVersion} className="space-y-4">
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">
+                                        Version Number
+                                    </label>
+                                    <input
+                                        type="text"
+                                        value={newVersion}
+                                        onChange={(e) => setNewVersion(e.target.value)}
+                                        placeholder="1.15.1"
+                                        className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-2.5 text-white font-mono placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition-all"
+                                    />
+                                    <p className="text-[10px] text-slate-500 mt-1">Format: x.xx.x (e.g. 1.15.1, 2.0.0)</p>
+                                </div>
 
-                            <button
-                                type="submit"
-                                disabled={isSubmitting || !newVersion.trim()}
-                                className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-500 text-white font-bold text-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                            >
-                                {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
-                                Create Version
-                            </button>
-                        </form>
+                                <button
+                                    type="submit"
+                                    disabled={isSubmitting || !newVersion.trim()}
+                                    className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-500 text-white font-bold text-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                                >
+                                    {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+                                    Create Version
+                                </button>
+                            </form>
+                        )}
 
                         {error && (
                             <div className="mt-4 p-3 bg-red-500/10 border border-red-500/20 rounded-xl text-red-400 text-sm flex items-center gap-2">

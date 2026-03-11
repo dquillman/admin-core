@@ -38,7 +38,7 @@ const PlansPage: React.FC = () => {
     }, [appId, authLoading, isAdmin]);
 
     const fetchConfig = async () => {
-        if (!isAdmin) return; // Guard clause
+        if (!isAdmin || appId === 'all') return; // Guard clause
         setLoading(true);
         try {
             const data = await getAppConfig(appId, 'plans');
@@ -63,6 +63,16 @@ const PlansPage: React.FC = () => {
             setSaving(false);
         }
     };
+
+    if (appId === 'all') {
+        return (
+            <div className="flex flex-col items-center justify-center min-h-[40vh] text-slate-400">
+                <CreditCard className="w-12 h-12 mb-4 text-slate-600" />
+                <p className="text-lg font-semibold text-slate-300">Select a specific app</p>
+                <p className="text-sm mt-1">Plans & Trials are app-scoped. Choose an app from the sidebar to configure.</p>
+            </div>
+        );
+    }
 
     if (loading) {
         return (

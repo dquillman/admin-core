@@ -35,9 +35,10 @@ const DataIntegrityPanel: React.FC = () => {
         setLoading(true);
         setExpandedIdx(null);
         const checks: CheckResult[] = [];
-        const norm = normalizeAppValue(appId);
+        const isAllApps = appId === 'all';
+        const norm = isAllApps ? null : normalizeAppValue(appId);
 
-        // 1. Users — comprehensive schema check
+        // 1. Users — comprehensive schema check (global — users aren't app-scoped)
         const usersSnap = await safeGetDocs(
             query(collection(db, 'users'), limit(500)),
             { fallback: [], context: 'Integrity', description: 'Check Users' }
@@ -58,11 +59,12 @@ const DataIntegrityPanel: React.FC = () => {
                     });
                 }
             });
+            const schemaLabel = norm ? 'User Schema (global)' : 'User Schema';
             if (missingEmailDocs.length === 0) {
-                checks.push({ name: 'User Schema', status: 'pass', message: `${total} users — all have email` });
+                checks.push({ name: schemaLabel, status: 'pass', message: `${total} users — all have email` });
             } else {
                 checks.push({
-                    name: 'User Schema',
+                    name: schemaLabel,
                     status: missingEmailDocs.length > 5 ? 'warn' : 'pass',
                     message: `${missingEmailDocs.length} of ${total} users missing email`,
                     details: missingEmailDocs.length <= 5 ? 'Click to see which users.' : undefined,
@@ -82,9 +84,10 @@ const DataIntegrityPanel: React.FC = () => {
                     });
                 }
             });
+            const billingLabel = norm ? 'Billing Integrity (global)' : 'Billing Integrity';
             if (paidNoVerifyDocs.length > 0) {
                 checks.push({
-                    name: 'Billing Integrity',
+                    name: billingLabel,
                     status: 'warn',
                     message: `${paidNoVerifyDocs.length} paid user${paidNoVerifyDocs.length > 1 ? 's' : ''} missing verifiedPaidAt`,
                     details: 'May indicate Stripe webhook issue.',
@@ -92,7 +95,7 @@ const DataIntegrityPanel: React.FC = () => {
                     link: '/billing-alerts',
                 });
             } else {
-                checks.push({ name: 'Billing Integrity', status: 'pass', message: 'All paid users have verification timestamps' });
+                checks.push({ name: billingLabel, status: 'pass', message: 'All paid users have verification timestamps' });
             }
 
             // 3. Usage scores
@@ -111,9 +114,10 @@ const DataIntegrityPanel: React.FC = () => {
                     }
                 }
             });
+            const usageLabel = norm ? 'Usage Scores (global)' : 'Usage Scores';
             if (noScoreDocs.length > 0) {
                 checks.push({
-                    name: 'Usage Scores',
+                    name: usageLabel,
                     status: noScoreDocs.length > 10 ? 'warn' : 'pass',
                     message: `${noScoreDocs.length} active user${noScoreDocs.length > 1 ? 's' : ''} missing usage score`,
                     details: totalMissing > noScoreDocs.length ? `${totalMissing} total (incl. archived)` : undefined,
@@ -121,28 +125,31 @@ const DataIntegrityPanel: React.FC = () => {
                     link: '/usage-config',
                 });
             } else {
-                checks.push({ name: 'Usage Scores', status: 'pass', message: 'All active users have scores' });
+                checks.push({ name: usageLabel, status: 'pass', message: 'All active users have scores' });
             }
         }
 
         // 4. App Config exists for current app
-        const appConfigSnap = await safeGetDocs(
-            query(collection(db, 'apps', norm, 'config'), limit(1)),
-            { fallback: [], context: 'Integrity', description: 'Check App Config' }
-        );
-        if (appConfigSnap.empty) {
-            checks.push({
-                name: `App Config (${norm})`,
-                status: 'pass',
-                message: 'No saved config — using defaults',
-                details: 'Save on Plans page to persist.',
-                link: '/plans',
-            });
-        } else {
-            checks.push({ name: `App Config (${norm})`, status: 'pass', message: `${appConfigSnap.docs.length} config doc${appConfigSnap.docs.length > 1 ? 's' : ''} found` });
+        if (norm) {
+            const appConfigSnap = await safeGetDocs(
+                query(collection(db, 'apps', norm, 'config'), limit(1)),
+                { fallback: [], context: 'Integrity', description: 'Check App Config' }
+            );
+            if (appConfigSnap.empty) {
+                checks.push({
+                    name: `App Config (${norm})`,
+                    status: 'pass',
+                    message: 'No saved config — using defaults',
+                    details: 'Save on Plans page to persist.',
+                    link: '/plans',
+                });
+            } else {
+                checks.push({ name: `App Config (${norm})`, status: 'pass', message: `${appConfigSnap.docs.length} config doc${appConfigSnap.docs.length > 1 ? 's' : ''} found` });
+            }
         }
 
-        // 5. Unresolved billing events
+        // 5. Unresolved billing events (global)
+        const unresolvedBillingLabel = norm ? 'Unresolved Billing (global)' : 'Unresolved Billing';
         const unresolvedSnap = await safeGetDocs(
             query(collection(db, 'billing_events_unresolved'), limit(50)),
             { fallback: [], context: 'Integrity', description: 'Check Unresolved Billing' }
@@ -157,14 +164,14 @@ const DataIntegrityPanel: React.FC = () => {
                 };
             });
             checks.push({
-                name: 'Unresolved Billing',
+                name: unresolvedBillingLabel,
                 status: items.length >= 5 ? 'fail' : 'warn',
                 message: `${items.length} unresolved event${items.length > 1 ? 's' : ''} need attention`,
                 items,
                 link: '/unresolved-billing',
             });
         } else {
-            checks.push({ name: 'Unresolved Billing', status: 'pass', message: 'No unresolved billing events' });
+            checks.push({ name: unresolvedBillingLabel, status: 'pass', message: 'No unresolved billing events' });
         }
 
         // 6 & 7: Fetch all issues for the current app (client-side filter by app + exclude deleted)
@@ -175,7 +182,7 @@ const DataIntegrityPanel: React.FC = () => {
         type IssueDoc = Record<string, unknown> & { id: string };
         const appIssues: IssueDoc[] = allIssuesSnap.docs
             .map(d => ({ ...d.data(), id: d.id } as IssueDoc))
-            .filter(i => !i.deleted && normalizeAppValue(i.app as string) === norm);
+            .filter(i => !i.deleted && (isAllApps || normalizeAppValue(i.app as string) === norm));
 
         // 6. Orphan PFV references
         const versionsSnap = await safeGetDocs(
@@ -184,7 +191,7 @@ const DataIntegrityPanel: React.FC = () => {
         );
         const validVersions = new Set(
             versionsSnap.docs
-                .filter(d => normalizeAppValue(d.data().appId as string) === norm)
+                .filter(d => isAllApps || normalizeAppValue(d.data().appId as string) === norm)
                 .map(d => d.data().version as string)
         );
         const orphanItems: ProblemItem[] = [];
@@ -228,7 +235,7 @@ const DataIntegrityPanel: React.FC = () => {
             checks.push({
                 name: 'Issue Backlog',
                 status: 'warn',
-                message: `${newIssues.length} untriaged issues for ${norm} (status: new)`,
+                message: `${newIssues.length} untriaged issues${norm ? ` for ${norm}` : ' across all apps'} (status: new)`,
                 details: 'Review and triage these.',
                 items,
                 link: '/issues?status=new',
@@ -237,7 +244,7 @@ const DataIntegrityPanel: React.FC = () => {
             checks.push({
                 name: 'Issue Backlog',
                 status: 'pass',
-                message: `${newIssues.length} new issue${newIssues.length !== 1 ? 's' : ''} for ${norm} — backlog healthy`,
+                message: `${newIssues.length} new issue${newIssues.length !== 1 ? 's' : ''}${norm ? ` for ${norm}` : ' across all apps'} — backlog healthy`,
             });
         }
 

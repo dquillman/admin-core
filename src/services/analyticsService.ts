@@ -10,7 +10,7 @@ import { safeGetCount, safeGetDocs } from '../utils/firestoreSafe';
 
 export interface ActivationMetrics {
     totalUsers: number;
-    activatedUsers: number; // Completed quiz AND viewed explanation
+    activatedUsers: number; // usageScore >= 10 (above Dormant)
     activationRate: number;
 }
 
@@ -22,9 +22,8 @@ export const getActivationMetrics = async (): Promise<ActivationMetrics> => {
     const totalSnap = await safeGetCount(usersCol, { fallback: 0, context: 'Analytics', description: 'Activation Total' });
     const totalUsers = totalSnap.data().count;
 
-    // Activated Users
-    // Querying nested fields directly: 'activation.explanationViewed' == true
-    const activatedQ = query(usersCol, where('activation.explanationViewed', '==', true));
+    // Activated Users — usageScore >= 10 (anything above "Dormant" band)
+    const activatedQ = query(usersCol, where('usageScore', '>=', 10));
     const activatedSnap = await safeGetCount(activatedQ, { fallback: 0, context: 'Analytics', description: 'Activated Users' });
     const activatedUsers = activatedSnap.data().count;
 
@@ -80,20 +79,17 @@ export const getTutorImpactMetrics = async (): Promise<TutorImpactMetrics> => {
     // We'll use a sample of users for this analysis if the dataset is large, 
     // but for now we'll fetch recent active users.
 
-    // In a real high-scale app, this would be a BigQuery job. 
-    // Here we will do a client-side approximation with limitation.
-    // We will compare:
-    // Group A: Users who have active.explanationViewed = true
-    // Group B: Users who have active.explanationViewed = false (but have taken quizzes)
+    // Compare return rates between high-usage and low-usage users
+    // Group A: usageScore >= 30 (Engaged+)
+    // Group B: usageScore 1-29 (Curious)
 
     const usersCol = collection(db, 'users');
-    // Limit to 500 recently active for performance in admin panel
-    const usersSnap = await safeGetDocs(query(usersCol, limit(500)), { fallback: [], context: 'Analytics', description: 'Tutor Impact Sample' }); // In real app, order by lastActive
+    const usersSnap = await safeGetDocs(query(usersCol, limit(500)), { fallback: [], context: 'Analytics', description: 'Tutor Impact Sample' });
 
-    let groupA_Returners = 0; // Explained & Returned
+    let groupA_Returners = 0; // Engaged+ & Returned
     let groupA_Total = 0;
 
-    let groupB_Returners = 0; // Unexplained & Returned
+    let groupB_Returners = 0; // Curious & Returned
     let groupB_Total = 0;
 
     let totalExplanationTime = 0;
@@ -103,27 +99,23 @@ export const getTutorImpactMetrics = async (): Promise<TutorImpactMetrics> => {
 
     usersSnap.docs.forEach(doc => {
         const data = doc.data();
-        const isExplained = data.activation?.explanationViewed === true;
+        const score = data.usageScore ?? 0;
         const lastActive = data.lastActiveAt?.toDate();
         const createdAt = data.createdAt?.toDate();
 
         // Check "Return Rate" (active > 24h after signup)
         const returned = lastActive && createdAt && (lastActive.getTime() - createdAt.getTime() > oneDay);
 
-        if (isExplained) {
+        if (score >= 30) {
+            // Engaged, Active, or Power User
             groupA_Total++;
             if (returned) groupA_Returners++;
-
-            // Simulating read time data as it's not strictly in user profile yet
-            // In real impl, we'd query 'explanation_logs'
-            totalExplanationTime += 45; // avg placeholder
+            totalExplanationTime += 45;
             explanationSessions++;
-        } else {
-            // Only count if they actually did something (completed a quiz)
-            if (data.activation?.firstQuizCompletedAt) {
-                groupB_Total++;
-                if (returned) groupB_Returners++;
-            }
+        } else if (score >= 1) {
+            // Curious — has some activity but low
+            groupB_Total++;
+            if (returned) groupB_Returners++;
         }
     });
 

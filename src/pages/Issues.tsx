@@ -324,7 +324,10 @@ const Issues: React.FC = () => {
                 const searchLower = searchUser.toLowerCase();
                 const userIdMatch = issue.userId?.toLowerCase().includes(searchLower);
                 const emailMatch = issue.userEmail?.toLowerCase().includes(searchLower);
-                if (!userIdMatch && !emailMatch) return false;
+                const displayIdMatch = issue.displayId?.toLowerCase().includes(searchLower);
+                const messageMatch = issue.message?.toLowerCase().includes(searchLower);
+                const descMatch = (issue.description as string | undefined)?.toLowerCase().includes(searchLower);
+                if (!userIdMatch && !emailMatch && !displayIdMatch && !messageMatch && !descMatch) return false;
             }
 
             return true;
@@ -616,7 +619,7 @@ const Issues: React.FC = () => {
                 <div className="flex items-center gap-3">
                     <input
                         type="text"
-                        placeholder="Search User ID or Email..."
+                        placeholder="Search ID, title, email..."
                         value={searchUser}
                         onChange={(e) => setSearchUser(e.target.value)}
                         className="bg-slate-900 border border-slate-700 text-slate-300 text-sm rounded-lg p-2.5 focus:ring-brand-500 focus:border-brand-500 w-64"

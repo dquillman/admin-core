@@ -202,6 +202,13 @@ export const getTesterSummaryStats = async (): Promise<TesterStats> => {
 
 // --- Audit Log Service (App Scoped) ---
 export const getRecentAuditLogs = async (appId: string, limitCount: number = 10) => {
+    if (appId === 'all') {
+        // Aggregate audit logs from the global admin_audit collection
+        const auditCol = collection(db, 'admin_audit');
+        const q = query(auditCol, orderBy('timestamp', 'desc'), limit(limitCount));
+        const snap = await safeGetDocs(q, { fallback: [], context: 'Audit', description: 'Recent Global Logs' });
+        return snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    }
     const auditCol = collection(db, 'apps', appId, 'audit');
     const q = query(auditCol, orderBy('timestamp', 'desc'), limit(limitCount));
     const snap = await safeGetDocs(q, { fallback: [], context: 'Audit', description: 'Recent Logs' });
@@ -1278,6 +1285,12 @@ const resolveVersionAppId = (v: ReleaseVersion): string => normalizeAppValue(v.a
 export const getReleaseVersions = async (appId?: string): Promise<ReleaseVersion[]> => {
     const col = collection(db, 'release_versions');
     const constraints: QueryConstraint[] = [orderBy('version', 'desc')];
+    // 'all' = return all versions unfiltered
+    if (appId === 'all') {
+        const q = query(col, ...constraints);
+        const snap = await safeGetDocs(q, { fallback: [], context: 'Versions', description: 'Get All Release Versions' });
+        return snap.docs.map(d => ({ id: d.id, ...d.data() } as ReleaseVersion));
+    }
     // Server-side filter when appId is provided. Legacy docs (no appId) default to 'exam-coach',
     // so we can only use a Firestore where() for non-exam-coach apps. For exam-coach (or no appId),
     // we fall back to client-side filtering to capture legacy docs that lack the appId field.
@@ -1295,6 +1308,14 @@ export const getReleaseVersions = async (appId?: string): Promise<ReleaseVersion
 export const subscribeToReleaseVersions = (onData: (versions: ReleaseVersion[]) => void, appId?: string): (() => void) => {
     const col = collection(db, 'release_versions');
     const constraints: QueryConstraint[] = [orderBy('version', 'desc')];
+    // 'all' = subscribe to all versions unfiltered
+    if (appId === 'all') {
+        return onSnapshot(query(col, ...constraints), (snapshot) => {
+            onData(snapshot.docs.map(d => ({ id: d.id, ...d.data() } as ReleaseVersion)));
+        }, (error) => {
+            console.error("Release versions subscription error:", error);
+        });
+    }
     const norm = appId ? normalizeAppValue(appId) : undefined;
     const useServerFilter = norm && norm !== 'exam-coach';
     if (useServerFilter) { constraints.push(where('appId', '==', norm)); }
@@ -1515,7 +1536,9 @@ export const getIssuesByPFV = async (version: string): Promise<ReportedIssue[]> 
     const issuesCol = collection(db, 'issues');
     const q = query(issuesCol, where('plannedForVersion', '==', version));
     const snap = await safeGetDocs(q, { fallback: [], context: 'Issues', description: `Issues for PFV ${version}` });
-    return snap.docs.map(d => ({ id: d.id, ...d.data() } as ReportedIssue));
+    return snap.docs
+        .map(d => ({ id: d.id, ...d.data() } as ReportedIssue))
+        .filter(i => !i.deleted);
 };
 
 // --- Tester Conversion Data ---

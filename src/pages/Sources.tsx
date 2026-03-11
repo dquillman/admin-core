@@ -41,7 +41,7 @@ const SourcesPage: React.FC = () => {
     }, [appId, authLoading, isAdmin]);
 
     const fetchSources = async () => {
-        if (!isAdmin) return;
+        if (!isAdmin || appId === 'all') return;
         setLoading(true);
         try {
             const data = await getSources(appId);
@@ -84,6 +84,16 @@ const SourcesPage: React.FC = () => {
     const filteredSources = sources.filter(s =>
         s.url.toLowerCase().includes(searchTerm.toLowerCase())
     );
+
+    if (appId === 'all') {
+        return (
+            <div className="flex flex-col items-center justify-center min-h-[40vh] text-slate-400">
+                <Globe className="w-12 h-12 mb-4 text-slate-600" />
+                <p className="text-lg font-semibold text-slate-300">Select a specific app</p>
+                <p className="text-sm mt-1">Sources are app-scoped. Choose an app from the sidebar to manage sources.</p>
+            </div>
+        );
+    }
 
     return (
         <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700">

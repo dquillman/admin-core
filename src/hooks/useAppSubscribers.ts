@@ -12,6 +12,13 @@ export const useAppSubscribers = () => {
     const normalizedAppId = appId.replace(/\s+/g, '-');
 
     useEffect(() => {
+        // 'all' = no subscriber filtering (show all users)
+        if (normalizedAppId === 'all') {
+            setSubscriberUids(null);
+            setLoading(false);
+            return;
+        }
+
         if (cacheRef.current[normalizedAppId]) {
             setSubscriberUids(cacheRef.current[normalizedAppId]);
             setLoading(false);
