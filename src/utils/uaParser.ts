@@ -13,8 +13,8 @@ export function parseOS(ua: string): string {
         return `macOS ${ver}`;
     }
     if (/CrOS/.test(ua)) return 'ChromeOS';
-    if (/Linux/.test(ua)) return 'Linux';
     if (/Android ([\d.]+)/.test(ua)) return `Android ${ua.match(/Android ([\d.]+)/)?.[1]}`;
+    if (/Linux/.test(ua)) return 'Linux';
     if (/iPhone OS ([\d_]+)/.test(ua)) return `iOS ${ua.match(/iPhone OS ([\d_]+)/)?.[1]?.replace(/_/g, '.')}`;
     if (/iPad/.test(ua)) return 'iPadOS';
     return 'Unknown';

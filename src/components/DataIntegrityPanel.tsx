@@ -248,7 +248,6 @@ const DataIntegrityPanel: React.FC = () => {
             });
         }
 
-        // eslint-disable-next-line react-hooks/set-state-in-effect -- async data fetch pattern
         setResults(checks);
         setLoading(false);
     }, [appId]);

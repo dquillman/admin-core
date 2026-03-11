@@ -4,12 +4,7 @@ import type { ReportedIssue, IssueCategory, ReleaseVersion } from '../types';
 import { ISSUE_STATUS, ISSUE_STATUS_OPTIONS, ISSUE_PLATFORMS, normalizeAppValue } from '../constants';
 import { updateIssueStatus, updateIssueDetails, addIssueNote, deleteIssue, subscribeToIssueCategories, subscribeToReleaseVersions, updateIssuePFV, updateIssueRIV, fetchAllUsersLookup } from '../services/firestoreService';
 import { useAuth } from '../hooks/useAuth';
-
-const sanitizeUrl = (url: string | null | undefined): string | undefined => {
-    if (!url) return undefined;
-    if (url.startsWith('http://') || url.startsWith('https://')) return url;
-    return undefined; // reject non-http/https URLs entirely
-};
+import { sanitizeUrl } from '../utils/formatting';
 
 interface IssueDetailModalProps {
     issue: ReportedIssue | null;
@@ -181,7 +176,7 @@ export const IssueDetailModal: React.FC<IssueDetailModalProps> = ({ issue, onClo
     };
 
     return (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm" onClick={onClose}>
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm" role="dialog" aria-modal="true" aria-label="Issue detail" onClick={onClose}>
             <div ref={modalRef} tabIndex={-1} onKeyDown={handleKeyDown} className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-3xl max-h-[90vh] flex flex-col shadow-2xl outline-none" onClick={e => e.stopPropagation()}>
 
                 {/* Header: ID & Close */}
@@ -227,7 +222,7 @@ export const IssueDetailModal: React.FC<IssueDetailModalProps> = ({ issue, onClo
                             )}
                         </div>
                     </div>
-                    <button onClick={onClose} className="p-2 hover:bg-slate-800 rounded-lg text-slate-500 hover:text-white transition-colors">
+                    <button onClick={onClose} aria-label="Close issue detail" className="p-2 hover:bg-slate-800 rounded-lg text-slate-500 hover:text-white transition-colors">
                         <X className="w-6 h-6" />
                     </button>
                 </div>
@@ -240,6 +235,7 @@ export const IssueDetailModal: React.FC<IssueDetailModalProps> = ({ issue, onClo
                             <span>{validationError}</span>
                             <button
                                 onClick={() => setValidationError(null)}
+                                aria-label="Dismiss error"
                                 className="shrink-0 text-red-400 hover:text-red-300 transition-colors"
                             >
                                 <X className="w-4 h-4" />
@@ -356,7 +352,7 @@ export const IssueDetailModal: React.FC<IssueDetailModalProps> = ({ issue, onClo
                                 }}
                                 className="mb-2 w-full text-xs flex items-center justify-center gap-2 py-1.5 bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 border border-indigo-500/30 rounded transition-colors"
                             >
-                                <Lightbulb className="w-3 h-3" /> Evaluate Severity (AI)
+                                <Lightbulb className="w-3 h-3" /> <span>Evaluate Severity (AI)</span>
                             </button>
 
                             <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">

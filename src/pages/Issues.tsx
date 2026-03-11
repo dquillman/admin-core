@@ -27,12 +27,7 @@ import {
     Tag
 } from 'lucide-react';
 import { ImportIssuesModal } from '../components/ImportIssuesModal';
-
-const sanitizeUrl = (url: string | null | undefined): string | undefined => {
-    if (!url) return undefined;
-    if (url.startsWith('http://') || url.startsWith('https://')) return url;
-    return undefined; // reject non-http/https URLs entirely
-};
+import { sanitizeUrl } from '../utils/formatting';
 
 
 

@@ -8,7 +8,7 @@ const db = admin.firestore();
 /**
  * Helper: Check Admin Role
  */
-async function assertAdmin(auth: any) {
+async function assertAdmin(auth: { uid: string } | undefined) {
     if (!auth) throw new HttpsError("unauthenticated", "Must be logged in");
     const callerDoc = await db.collection("users").doc(auth.uid).get();
     if (callerDoc.data()?.role !== "admin") {

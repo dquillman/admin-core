@@ -14,18 +14,22 @@ export const useAppSubscribers = () => {
     useEffect(() => {
         // 'all' = no subscriber filtering (show all users)
         if (normalizedAppId === 'all') {
-            setSubscriberUids(null);
-            setLoading(false);
+            queueMicrotask(() => {
+                setSubscriberUids(null);
+                setLoading(false);
+            });
             return;
         }
 
         if (cacheRef.current[normalizedAppId]) {
-            setSubscriberUids(cacheRef.current[normalizedAppId]);
-            setLoading(false);
+            queueMicrotask(() => {
+                setSubscriberUids(cacheRef.current[normalizedAppId]);
+                setLoading(false);
+            });
             return;
         }
 
-        setLoading(true);
+        queueMicrotask(() => setLoading(true));
         getAppSubscriptionUids(normalizedAppId).then(uids => {
             cacheRef.current[normalizedAppId] = uids;
             setSubscriberUids(uids);

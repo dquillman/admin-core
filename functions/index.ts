@@ -25,7 +25,7 @@ async function assertAdmin(context: functions.https.CallableContext) {
 async function updateAdminStats(updates: { [key: string]: number }) {
     try {
         const statsRef = db.doc("stats/admin_core");
-        const updateData: any = {
+        const updateData: Record<string, unknown> = {
             lastUpdated: admin.firestore.FieldValue.serverTimestamp()
         };
 
@@ -101,7 +101,7 @@ export const revokeTesterPro = functions.https.onCall(async (data, context) => {
 
     const prevState = targetDoc.data();
 
-    const revokeUpdates: Record<string, any> = {
+    const revokeUpdates: Record<string, unknown> = {
         testerOverride: false,
         testerExpiresAt: null,
         testerGrantedAt: null,
@@ -170,7 +170,7 @@ export const disableUser = functions.https.onCall(async (data, context) => {
 /**
  * Scheduled Job: Auto-expire testers
  */
-export const autoExpireTesterPro = functions.pubsub.schedule("every 6 hours").onRun(async (context) => {
+export const autoExpireTesterPro = functions.pubsub.schedule("every 6 hours").onRun(async () => {
     const now = admin.firestore.Timestamp.now();
     const snapshot = await db.collection("users")
         .where("testerOverride", "==", true)
@@ -184,7 +184,7 @@ export const autoExpireTesterPro = functions.pubsub.schedule("every 6 hours").on
 
     snapshot.docs.forEach(userDoc => {
         const userData = userDoc.data();
-        const expireUpdates: Record<string, any> = {
+        const expireUpdates: Record<string, unknown> = {
             testerOverride: false,
             testerExpiresAt: null,
             plan: 'starter',
@@ -603,7 +603,8 @@ export const stripeWebhook = functions.https.onRequest(async (req, res) => {
         return;
     }
 
-    const stripe = new Stripe(stripeSecretKey, { apiVersion: '2024-04-10' as any });
+    // @ts-expect-error Stripe API version string
+    const stripe = new Stripe(stripeSecretKey, { apiVersion: '2024-04-10' });
 
     const sig = req.headers['stripe-signature'];
     if (!sig) {
@@ -620,9 +621,10 @@ export const stripeWebhook = functions.https.onRequest(async (req, res) => {
 
     try {
         event = stripe.webhooks.constructEvent(req.rawBody, sig as string, webhookSecret);
-    } catch (err: any) {
-        console.error('Stripe signature verification failed:', err.message);
-        res.status(400).send(`Webhook Error: ${err.message}`);
+    } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : 'Unknown error';
+        console.error('Stripe signature verification failed:', message);
+        res.status(400).send(`Webhook Error: ${message}`);
         return;
     }
 
@@ -647,7 +649,7 @@ export const stripeWebhook = functions.https.onRequest(async (req, res) => {
     };
 
     // Audit log helper for Stripe actions
-    const logStripeAudit = async (action: string, targetUid: string, metadata: Record<string, any>) => {
+    const logStripeAudit = async (action: string, targetUid: string, metadata: Record<string, unknown>) => {
         await db.collection('admin_audit').add({
             action,
             adminUid: 'STRIPE_WEBHOOK',
@@ -659,7 +661,7 @@ export const stripeWebhook = functions.https.onRequest(async (req, res) => {
 
     try {
         let customerEmail: string | null | undefined = null;
-        let billingUpdates: Record<string, any> = {};
+        let billingUpdates: Record<string, unknown> = {};
         let auditAction = '';
 
         switch (event.type) {
@@ -730,7 +732,8 @@ export const stripeWebhook = functions.https.onRequest(async (req, res) => {
         const userDoc = await resolveUser(customerEmail);
 
         if (!userDoc) {
-            console.warn(`Stripe event ${event.type}: could not resolve user for email ${customerEmail}`);
+            const maskedEmail = customerEmail ? customerEmail.replace(/^(..)[^@]*/, '$1***') : 'unknown';
+            console.warn(`Stripe event ${event.type}: could not resolve user for email ${maskedEmail}`);
             await logUnresolved(event.type, customerEmail, event.id);
             res.status(200).json({ received: true, resolved: false });
             return;
@@ -743,20 +746,22 @@ export const stripeWebhook = functions.https.onRequest(async (req, res) => {
             billingUpdates,
         });
 
-        console.log(`Stripe ${event.type}: updated user ${userDoc.id} (${customerEmail}) → ${billingUpdates.billingStatus}`);
+        const maskedLog = customerEmail ? customerEmail.replace(/^(..)[^@]*/, '$1***') : 'unknown';
+        console.log(`Stripe ${event.type}: updated user ${userDoc.id} (${maskedLog}) → ${billingUpdates.billingStatus}`);
         res.status(200).json({ received: true, resolved: true, userId: userDoc.id });
-    } catch (err: any) {
+    } catch (err: unknown) {
         console.error('Stripe webhook processing error:', err);
 
         // Non-retryable errors: return 200 so Stripe doesn't keep retrying
+        const errObj = err as { code?: string; message?: string };
         const nonRetryable =
-            err?.code === 'not-found' ||
-            err?.code === 'invalid-argument' ||
-            err?.message?.includes('No such customer') ||
-            err?.message?.includes('resource_missing');
+            errObj?.code === 'not-found' ||
+            errObj?.code === 'invalid-argument' ||
+            errObj?.message?.includes('No such customer') ||
+            errObj?.message?.includes('resource_missing');
 
         if (nonRetryable) {
-            res.status(200).json({ received: true, error: err.message });
+            res.status(200).json({ received: true, error: errObj.message });
         } else {
             res.status(500).send('Internal error');
         }
